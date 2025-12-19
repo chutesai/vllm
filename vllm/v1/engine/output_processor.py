@@ -204,6 +204,7 @@ class RequestState:
         finish_reason: FinishReason | None,
         stop_reason: int | str | None,
         kv_transfer_params: dict[str, Any] | None = None,
+        hidden_states: list[list[float]] | None = None,
     ) -> RequestOutput | PoolingRequestOutput | None:
         finished = finish_reason is not None
         final_only = self.output_kind == RequestOutputKind.FINAL_ONLY
@@ -241,7 +242,9 @@ class RequestState:
                 request_id, [self._new_pooling_output(pooling_output)], finished
             )
 
-        output = self._new_completion_output(new_token_ids, finish_reason, stop_reason)
+        output = self._new_completion_output(
+            new_token_ids, finish_reason, stop_reason, hidden_states
+        )
 
         if self.parent_req is None:
             outputs = [output]
@@ -305,6 +308,7 @@ class RequestState:
         token_ids: list[int],
         finish_reason: FinishReason | None,
         stop_reason: int | str | None,
+        hidden_states: list[list[float]] | None = None,
     ) -> CompletionOutput:
         assert self.detokenizer is not None
         assert self.logprobs_processor is not None
@@ -329,6 +333,7 @@ class RequestState:
             cumulative_logprob=self.logprobs_processor.cumulative_logprob,
             finish_reason=str(finish_reason) if finished else None,
             stop_reason=stop_reason if finished else None,
+            hidden_states=hidden_states,
         )
 
     def _new_pooling_output(
@@ -511,6 +516,7 @@ class OutputProcessor:
                 finish_reason,
                 stop_reason,
                 kv_transfer_params,
+                engine_core_output.hidden_states,
             ):
                 if req_state.queue is not None:
                     # AsyncLLM: put into queue for handling by generate().

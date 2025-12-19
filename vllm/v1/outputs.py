@@ -167,6 +167,9 @@ class ModelRunnerOutput:
     # [num_reqs, hidden_size]
     pooler_output: list[torch.Tensor | None]
 
+    # req_id -> hidden_states (list of hidden states per layer or just last)
+    hidden_states_dict: dict[str, list[list[float]]] | None = None
+
     kv_connector_output: KVConnectorOutput | None = None
 
     ec_connector_output: ECConnectorOutput | None = None

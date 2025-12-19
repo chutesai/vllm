@@ -231,6 +231,10 @@ class SamplingParams(
     implementations, plugins, etc. Not used by any in-tree sampling
     implementations."""
 
+    return_hidden_states: bool = False
+    """Whether to return the hidden states for each generated token.
+    Requires the engine to be started with --enable-return-hidden-states."""
+
     # Fields used for bad words
     bad_words: list[str] | None = None
     """Words that are not allowed to be generated. More precisely, only the
@@ -270,6 +274,7 @@ class SamplingParams(
         logit_bias: dict[int, float] | dict[str, float] | None = None,
         allowed_token_ids: list[int] | None = None,
         extra_args: dict[str, Any] | None = None,
+        return_hidden_states: bool = False,
     ) -> "SamplingParams":
         if logit_bias is not None:
             # Convert token_id to integer
@@ -310,6 +315,7 @@ class SamplingParams(
             logit_bias=logit_bias,
             allowed_token_ids=allowed_token_ids,
             extra_args=extra_args,
+            return_hidden_states=return_hidden_states,
         )
 
     def __post_init__(self) -> None:

@@ -3356,6 +3356,36 @@ class GPUModelRunner(
 
         with record_function_or_nullcontext("gpu_model_runner: eplb"):
             self.eplb_step()
+
+        # Extract hidden states for return_hidden_states feature
+        # Only extract for requests that have return_hidden_states=True
+        # in their sampling params to avoid performance overhead
+        hidden_states_dict: dict[str, list[list[float]]] | None = None
+        if sample_hidden_states is not None and len(req_ids_output_copy) > 0:
+            # Check which requests need hidden states
+            req_ids_needing_hidden_states = []
+            for req_id in req_ids_output_copy:
+                req_state = self.requests.get(req_id)
+                if (
+                    req_state is not None
+                    and req_state.sampling_params is not None
+                    and req_state.sampling_params.return_hidden_states
+                ):
+                    req_ids_needing_hidden_states.append(req_id)
+
+            if req_ids_needing_hidden_states:
+                hidden_states_dict = {}
+                # Move to CPU and convert to list for serialization
+                sample_hidden_states_cpu = sample_hidden_states.cpu()
+                for req_id in req_ids_needing_hidden_states:
+                    if req_id in req_id_to_index_output_copy:
+                        idx = req_id_to_index_output_copy[req_id]
+                        if idx < sample_hidden_states_cpu.shape[0]:
+                            # Store as list of list (single hidden state)
+                            hidden_states_dict[req_id] = [
+                                sample_hidden_states_cpu[idx].tolist()
+                            ]
+
         with record_function_or_nullcontext("gpu_model_runner: ModelRunnerOutput"):
             output = ModelRunnerOutput(
                 req_ids=req_ids_output_copy,
@@ -3364,6 +3394,7 @@ class GPUModelRunner(
                 logprobs=logprobs_lists,
                 prompt_logprobs_dict=prompt_logprobs_dict,
                 pooler_output=[],
+                hidden_states_dict=hidden_states_dict,
                 kv_connector_output=kv_connector_output,
                 ec_connector_output=ec_connector_output
                 if self.supports_mm_inputs

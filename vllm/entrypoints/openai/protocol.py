@@ -846,6 +846,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             bad_words=self.bad_words,
             allowed_token_ids=self.allowed_token_ids,
             extra_args=extra_args or None,
+            return_hidden_states=self.return_hidden_states or False,
         )
 
     @model_validator(mode="before")
@@ -1274,6 +1275,7 @@ class CompletionRequest(OpenAIBaseModel):
             logit_bias=self.logit_bias,
             allowed_token_ids=self.allowed_token_ids,
             extra_args=extra_args or None,
+            return_hidden_states=self.return_hidden_states or False,
         )
 
     @model_validator(mode="before")

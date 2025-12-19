@@ -125,6 +125,9 @@ class EngineCoreOutput(
 
     pooling_output: torch.Tensor | None = None
 
+    # Hidden states for return_hidden_states feature
+    hidden_states: list[list[float]] | None = None
+
     finish_reason: FinishReason | None = None
     stop_reason: int | str | None = None
     events: list[EngineCoreEvent] | None = None

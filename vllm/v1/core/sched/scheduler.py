@@ -1070,6 +1070,7 @@ class Scheduler(SchedulerInterface):
         num_nans_in_logits = model_runner_output.num_nans_in_logits
         kv_connector_output = model_runner_output.kv_connector_output
         cudagraph_stats = model_runner_output.cudagraph_stats
+        hidden_states_dict = model_runner_output.hidden_states_dict
 
         perf_stats: PerfStats | None = None
         if self.perf_metrics and self.perf_metrics.is_enabled():
@@ -1183,6 +1184,12 @@ class Scheduler(SchedulerInterface):
 
             # Get prompt logprobs for this request.
             prompt_logprobs_tensors = prompt_logprobs_dict.get(req_id)
+
+            # Get hidden states for this request if available.
+            req_hidden_states = (
+                hidden_states_dict.get(req_id) if hidden_states_dict else None
+            )
+
             if new_token_ids or pooler_output is not None or kv_transfer_params:
                 # Add EngineCoreOutput for this Request.
                 outputs[request.client_index].append(
@@ -1193,6 +1200,7 @@ class Scheduler(SchedulerInterface):
                         new_logprobs=new_logprobs,
                         new_prompt_logprobs_tensors=prompt_logprobs_tensors,
                         pooling_output=pooler_output,
+                        hidden_states=req_hidden_states,
                         stop_reason=request.stop_reason,
                         events=request.take_events(),
                         kv_transfer_params=kv_transfer_params,
