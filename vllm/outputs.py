@@ -46,6 +46,7 @@ class CompletionOutput:
     finish_reason: str | None = None
     stop_reason: int | str | None = None
     lora_request: LoRARequest | None = None
+    hidden_states: list[Any] | None = None
 
     def finished(self) -> bool:
         return self.finish_reason is not None
