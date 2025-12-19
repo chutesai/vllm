@@ -467,9 +467,14 @@ class OpenAIServingCompletion(OpenAIServing):
                                 index=i,
                                 text=delta_text,
                                 logprobs=logprobs,
-                                finish_reason=output.finish_reason,
-                                stop_reason=output.stop_reason,
-                                token_ids=as_list(output.token_ids),
+                                finish_reason=finish_reason,
+                                stop_reason=stop_reason,
+                                prompt_token_ids=prompt_token_ids_to_return,
+                                token_ids=(
+                                    as_list(output.token_ids)
+                                    if request.return_token_ids
+                                    else None
+                                ),
                                 hidden_states=hidden_states,
                             )
                         ],

@@ -121,9 +121,15 @@ class OpenAIServingChat(OpenAIServing):
         self.max_stream_completion_tokens = max_stream_completion_tokens
         self.enable_return_hidden_states = enable_return_hidden_states
 
-        if self.max_completion_tokens is None and self.max_stream_completion_tokens is not None:
+        if (
+            self.max_completion_tokens is None
+            and self.max_stream_completion_tokens is not None
+        ):
             self.max_completion_tokens = self.max_stream_completion_tokens
-        if self.max_stream_completion_tokens is None and self.max_completion_tokens is not None:
+        if (
+            self.max_stream_completion_tokens is None
+            and self.max_completion_tokens is not None
+        ):
             self.max_stream_completion_tokens = self.max_completion_tokens
 
         # set up logits processors
@@ -351,10 +357,13 @@ class OpenAIServingChat(OpenAIServing):
                     default_sampling_params=self.default_sampling_params,
                 )
 
-                limit = self.max_stream_completion_tokens if request.stream else self.max_completion_tokens
-                if limit is not None:
-                    if max_tokens is None or max_tokens > limit:
-                        max_tokens = limit
+                limit = (
+                    self.max_stream_completion_tokens
+                    if request.stream
+                    else self.max_completion_tokens
+                )
+                if limit is not None and (max_tokens is None or max_tokens > limit):
+                    max_tokens = limit
 
                 sampling_params: SamplingParams | BeamSearchParams
                 if request.use_beam_search:
@@ -777,8 +786,10 @@ class OpenAIServingChat(OpenAIServing):
                                     choices=[choice_data],
                                     model=model_name,
                                 )
-                                chunk.chutes_verification = get_chutes_verification_value(
-                                    chunk.id, chunk.created, last_msg_content
+                                chunk.chutes_verification = (
+                                    get_chutes_verification_value(
+                                        chunk.id, chunk.created, last_msg_content
+                                    )
                                 )
                                 if include_continuous_usage:
                                     chunk.usage = UsageInfo(
