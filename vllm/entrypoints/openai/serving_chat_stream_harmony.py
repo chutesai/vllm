@@ -92,7 +92,7 @@ def extract_harmony_streaming_delta(
         delta_message = DeltaMessage(content=delta_text)
     elif cur_channel == "analysis":
         if include_reasoning:
-            delta_message = DeltaMessage(reasoning=delta_text)
+            delta_message = DeltaMessage(reasoning_content=delta_text)
         else:
             delta_message = None
     else:

@@ -1467,15 +1467,7 @@ class ChatMessage(OpenAIBaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
 
     # vLLM-specific fields that are not in OpenAI spec
-    reasoning: str | None = None
     reasoning_content: str | None = None
-    """Deprecated: use `reasoning` instead."""
-
-    @model_validator(mode="after")
-    def handle_deprecated_reasoning_content(self):
-        """Copy reasoning to reasoning_content for backward compatibility."""
-        self.reasoning_content = self.reasoning
-        return self
 
 
 class ChatCompletionLogProb(OpenAIBaseModel):
@@ -1531,16 +1523,8 @@ class ChatCompletionResponse(OpenAIBaseModel):
 class DeltaMessage(OpenAIBaseModel):
     role: str | None = None
     content: str | None = None
-    reasoning: str | None = None
     reasoning_content: str | None = None
-    """Deprecated: use `reasoning` instead."""
     tool_calls: list[DeltaToolCall] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def handle_deprecated_reasoning_content(self):
-        """Copy reasoning to reasoning_content for backward compatibility."""
-        self.reasoning_content = self.reasoning
-        return self
 
 
 class ChatCompletionResponseStreamChoice(OpenAIBaseModel):
