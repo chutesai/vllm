@@ -170,6 +170,7 @@ class UsageInfo(OpenAIBaseModel):
     prompt_tokens: int = 0
     total_tokens: int = 0
     completion_tokens: int | None = 0
+    reasoning_tokens: int | None = 0
     prompt_tokens_details: PromptTokenUsageInfo | None = None
 
 
@@ -577,6 +578,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     prompt_logprobs: int | None = None
     allowed_token_ids: list[int] | None = None
     bad_words: list[str] = Field(default_factory=list)
+    return_hidden_states: bool | None = False
     # --8<-- [end:chat-completion-sampling-params]
 
     # --8<-- [start:chat-completion-extra-params]
@@ -1043,6 +1045,7 @@ class CompletionRequest(OpenAIBaseModel):
     truncate_prompt_tokens: Annotated[int, Field(ge=-1)] | None = None
     allowed_token_ids: list[int] | None = None
     prompt_logprobs: int | None = None
+    return_hidden_states: bool | None = False
     # --8<-- [end:completion-sampling-params]
 
     # --8<-- [start:completion-extra-params]
@@ -1368,6 +1371,7 @@ class CompletionResponseChoice(OpenAIBaseModel):
     token_ids: list[int] | None = None  # For response
     prompt_logprobs: list[dict[int, Logprob] | None] | None = None
     prompt_token_ids: list[int] | None = None  # For prompt
+    hidden_states: Any | None = None
 
 
 class CompletionResponse(OpenAIBaseModel):
@@ -1384,6 +1388,7 @@ class CompletionResponse(OpenAIBaseModel):
     kv_transfer_params: dict[str, Any] | None = Field(
         default=None, description="KVTransfer parameters."
     )
+    chutes_verification: str | None = None
 
 
 class CompletionResponseStreamChoice(OpenAIBaseModel):
@@ -1403,6 +1408,7 @@ class CompletionResponseStreamChoice(OpenAIBaseModel):
     # prompt tokens is put into choice to align with CompletionResponseChoice
     prompt_token_ids: list[int] | None = None
     token_ids: list[int] | None = None
+    hidden_states: Any | None = None
 
 
 class CompletionStreamResponse(OpenAIBaseModel):
@@ -1412,6 +1418,7 @@ class CompletionStreamResponse(OpenAIBaseModel):
     model: str
     choices: list[CompletionResponseStreamChoice]
     usage: UsageInfo | None = Field(default=None)
+    chutes_verification: str | None = None
 
 
 class FunctionCall(OpenAIBaseModel):
@@ -1499,6 +1506,7 @@ class ChatCompletionResponseChoice(OpenAIBaseModel):
     # not part of the OpenAI spec but is useful for tracing the tokens
     # in agent scenarios
     token_ids: list[int] | None = None
+    hidden_states: Any | None = None
 
 
 class ChatCompletionResponse(OpenAIBaseModel):
@@ -1517,6 +1525,7 @@ class ChatCompletionResponse(OpenAIBaseModel):
     kv_transfer_params: dict[str, Any] | None = Field(
         default=None, description="KVTransfer parameters."
     )
+    chutes_verification: str | None = None
 
 
 class DeltaMessage(OpenAIBaseModel):
@@ -1542,6 +1551,7 @@ class ChatCompletionResponseStreamChoice(OpenAIBaseModel):
     stop_reason: int | str | None = None
     # not part of the OpenAI spec but for tracing the tokens
     token_ids: list[int] | None = None
+    hidden_states: Any | None = None
 
 
 class ChatCompletionStreamResponse(OpenAIBaseModel):
@@ -1553,6 +1563,7 @@ class ChatCompletionStreamResponse(OpenAIBaseModel):
     usage: UsageInfo | None = Field(default=None)
     # not part of the OpenAI spec but for tracing the tokens
     prompt_token_ids: list[int] | None = None
+    chutes_verification: str | None = None
 
 
 class TranscriptionResponseStreamChoice(OpenAIBaseModel):

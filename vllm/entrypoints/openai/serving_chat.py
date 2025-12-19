@@ -11,6 +11,7 @@ from typing import Final
 import jinja2
 import partial_json_parser
 import regex as re
+from cllmv import generate as get_chutes_verification_value
 from fastapi import Request
 from openai_harmony import Message as OpenAIMessage
 
@@ -99,6 +100,9 @@ class OpenAIServingChat(OpenAIServing):
         enable_force_include_usage: bool = False,
         enable_log_outputs: bool = False,
         log_error_stack: bool = False,
+        max_completion_tokens: int | None = None,
+        max_stream_completion_tokens: int | None = None,
+        enable_return_hidden_states: bool = False,
     ) -> None:
         super().__init__(
             engine_client=engine_client,
@@ -113,6 +117,14 @@ class OpenAIServingChat(OpenAIServing):
         self.chat_template_content_format: Final = chat_template_content_format
         self.trust_request_chat_template = trust_request_chat_template
         self.enable_log_outputs = enable_log_outputs
+        self.max_completion_tokens = max_completion_tokens
+        self.max_stream_completion_tokens = max_stream_completion_tokens
+        self.enable_return_hidden_states = enable_return_hidden_states
+
+        if self.max_completion_tokens is None and self.max_stream_completion_tokens is not None:
+            self.max_completion_tokens = self.max_stream_completion_tokens
+        if self.max_stream_completion_tokens is None and self.max_completion_tokens is not None:
+            self.max_stream_completion_tokens = self.max_completion_tokens
 
         # set up logits processors
         self.logits_processors = self.model_config.logits_processors
@@ -338,6 +350,11 @@ class OpenAIServingChat(OpenAIServing):
                     input_length=len(engine_prompt["prompt_token_ids"]),
                     default_sampling_params=self.default_sampling_params,
                 )
+
+                limit = self.max_stream_completion_tokens if request.stream else self.max_completion_tokens
+                if limit is not None:
+                    if max_tokens is None or max_tokens > limit:
+                        max_tokens = limit
 
                 sampling_params: SamplingParams | BeamSearchParams
                 if request.use_beam_search:
@@ -592,6 +609,7 @@ class OpenAIServingChat(OpenAIServing):
         # Send response for each token for each request.n (index)
         num_choices = 1 if request.n is None else request.n
         previous_num_tokens = [0] * num_choices
+        previous_num_reasoning_tokens = [0] * num_choices
         finish_reason_sent = [False] * num_choices
         num_prompt_tokens = 0
         num_cached_tokens = None
@@ -718,6 +736,9 @@ class OpenAIServingChat(OpenAIServing):
                                 else None
                             ),
                         )
+                        chunk.chutes_verification = get_chutes_verification_value(
+                            chunk.id, chunk.created, None
+                        )
 
                         # if continuous usage stats are requested, add it
                         if include_continuous_usage:
@@ -756,6 +777,9 @@ class OpenAIServingChat(OpenAIServing):
                                     choices=[choice_data],
                                     model=model_name,
                                 )
+                                chunk.chutes_verification = get_chutes_verification_value(
+                                    chunk.id, chunk.created, last_msg_content
+                                )
                                 if include_continuous_usage:
                                     chunk.usage = UsageInfo(
                                         prompt_tokens=num_prompt_tokens,
@@ -770,6 +794,7 @@ class OpenAIServingChat(OpenAIServing):
                 for output in res.outputs:
                     i = output.index
                     tool_parser = tool_parsers[i]
+                    is_reasoning = False
 
                     if finish_reason_sent[i]:
                         continue
@@ -827,6 +852,7 @@ class OpenAIServingChat(OpenAIServing):
                         if cur_channel == "final":
                             delta_message = DeltaMessage(content=delta_text)
                         elif cur_channel == "analysis":
+                            is_reasoning = True
                             if request.include_reasoning:
                                 delta_message = DeltaMessage(reasoning=delta_text)
                             else:
@@ -847,6 +873,7 @@ class OpenAIServingChat(OpenAIServing):
                                     base_index += 1
 
                             if prev_recipient != cur_recipient:
+                                is_reasoning = True
                                 tool_name = cur_recipient.split("functions.", 1)[1]
                                 delta_message = DeltaMessage(
                                     tool_calls=[
@@ -862,6 +889,7 @@ class OpenAIServingChat(OpenAIServing):
                                     ]
                                 )
                             elif delta_text:
+                                is_reasoning = True
                                 delta_message = DeltaMessage(
                                     tool_calls=[
                                         DeltaToolCall(
@@ -878,6 +906,7 @@ class OpenAIServingChat(OpenAIServing):
                             if delta_message is not None:
                                 harmony_tools_streamed[i] = True
                         elif cur_channel == "commentary":
+                            is_reasoning = True
                             # Tool call preambles meant to be shown to the user
                             delta_message = DeltaMessage(content=delta_text)
                         else:
@@ -891,6 +920,7 @@ class OpenAIServingChat(OpenAIServing):
                                 previous_token_ids
                             )
                         ):
+                            is_reasoning = True
                             assert reasoning_parser is not None
                             delta_message = (
                                 reasoning_parser.extract_reasoning_streaming(
@@ -968,6 +998,7 @@ class OpenAIServingChat(OpenAIServing):
                             reasoning_end_arr[i] = True
 
                         if self.reasoning_parser and not reasoning_end_arr[i]:
+                            is_reasoning = True
                             delta_message = (
                                 reasoning_parser.extract_reasoning_streaming(
                                     previous_text,
@@ -1017,6 +1048,7 @@ class OpenAIServingChat(OpenAIServing):
                         assert reasoning_end_arr is not None
                         output_token_ids = as_list(output.token_ids)
                         if not reasoning_end_arr[i]:
+                            is_reasoning = True
                             # When encountering think end id in prompt_token_ids
                             # i.e {"enable_thinking": False},
                             # set reasoning status to end.
@@ -1099,6 +1131,7 @@ class OpenAIServingChat(OpenAIServing):
 
                     # when only reasoning
                     elif self.reasoning_parser:
+                        is_reasoning = True
                         delta_message = reasoning_parser.extract_reasoning_streaming(
                             previous_text,
                             current_text,
@@ -1126,6 +1159,8 @@ class OpenAIServingChat(OpenAIServing):
 
                     # set the previous values for the next iteration
                     previous_num_tokens[i] += len(output.token_ids)
+                    if is_reasoning:
+                        previous_num_reasoning_tokens[i] += len(output.token_ids)
 
                     # if the message delta is None (e.g. because it was a
                     # "control token" for tool calls or the parser otherwise
@@ -1138,6 +1173,7 @@ class OpenAIServingChat(OpenAIServing):
                         if (
                             output.finish_reason is None
                             and not request.return_token_ids
+                            and not request.return_hidden_states
                         ):
                             continue
                         delta_message = DeltaMessage()
@@ -1164,6 +1200,15 @@ class OpenAIServingChat(OpenAIServing):
                                 delta=True,
                             )
 
+                    hidden_states = None
+                    if (
+                        self.enable_return_hidden_states
+                        and request.return_hidden_states
+                        and output.hidden_states is not None
+                    ):
+                        # currently only support returning the last hidden state
+                        hidden_states = output.hidden_states[-1]
+
                     if output.finish_reason is None:
                         # Send token-by-token response for each request.n
                         choice_data = ChatCompletionResponseStreamChoice(
@@ -1176,6 +1221,7 @@ class OpenAIServingChat(OpenAIServing):
                                 if request.return_token_ids
                                 else None
                             ),
+                            hidden_states=hidden_states,
                         )
 
                     # if the model is finished generating
@@ -1285,6 +1331,9 @@ class OpenAIServingChat(OpenAIServing):
                         choices=[choice_data],
                         model=model_name,
                     )
+                    chunk.chutes_verification = get_chutes_verification_value(
+                        chunk.id, chunk.created, choice_data.delta.content
+                    )
 
                     # handle usage stats if requested & if continuous
                     if include_continuous_usage:
@@ -1293,6 +1342,7 @@ class OpenAIServingChat(OpenAIServing):
                             prompt_tokens=num_prompt_tokens,
                             completion_tokens=completion_tokens,
                             total_tokens=num_prompt_tokens + completion_tokens,
+                            reasoning_tokens=previous_num_reasoning_tokens[i],
                         )
 
                     data = chunk.model_dump_json(exclude_unset=True)
@@ -1306,6 +1356,7 @@ class OpenAIServingChat(OpenAIServing):
                     prompt_tokens=num_prompt_tokens,
                     completion_tokens=completion_tokens,
                     total_tokens=num_prompt_tokens + completion_tokens,
+                    reasoning_tokens=sum(previous_num_reasoning_tokens),
                 )
                 if self.enable_prompt_tokens_details and num_cached_tokens:
                     final_usage.prompt_tokens_details = PromptTokenUsageInfo(
@@ -1320,6 +1371,9 @@ class OpenAIServingChat(OpenAIServing):
                     model=model_name,
                     usage=final_usage,
                 )
+                final_usage_chunk.chutes_verification = get_chutes_verification_value(
+                    final_usage_chunk.id, final_usage_chunk.created, None
+                )
                 final_usage_data = final_usage_chunk.model_dump_json(
                     exclude_unset=True, exclude_none=True
                 )
@@ -1331,6 +1385,7 @@ class OpenAIServingChat(OpenAIServing):
                 prompt_tokens=num_prompt_tokens,
                 completion_tokens=num_completion_tokens,
                 total_tokens=num_prompt_tokens + num_completion_tokens,
+                reasoning_tokens=sum(previous_num_reasoning_tokens),
             )
 
             # Log complete streaming response if output logging is enabled
@@ -1386,6 +1441,7 @@ class OpenAIServingChat(OpenAIServing):
         assert final_res is not None
 
         choices: list[ChatCompletionResponseChoice] = []
+        num_reasoning_tokens = 0
         if self.tool_call_id_type == "kimi_k2":
             history_tool_call_cnt = get_history_tool_calls_cnt(conversation)
         else:
@@ -1412,8 +1468,24 @@ class OpenAIServingChat(OpenAIServing):
             else:
                 logprobs = None
 
+            hidden_states = None
+            if (
+                self.enable_return_hidden_states
+                and request.return_hidden_states
+                and output.hidden_states is not None
+            ):
+                # currently only support returning the last hidden state
+                hidden_states = output.hidden_states[-1]
+
             if self.use_harmony:
                 reasoning, content, _ = parse_chat_output(token_ids)
+                # Count reasoning tokens for harmony
+                parser = get_streamable_parser_for_assistant()
+                for token_id in token_ids:
+                    parser.process(token_id)
+                    if parser.current_channel in ("analysis", "commentary"):
+                        num_reasoning_tokens += 1
+
                 if not request.include_reasoning:
                     reasoning = None
 
@@ -1459,6 +1531,7 @@ class OpenAIServingChat(OpenAIServing):
                     token_ids=(
                         as_list(output.token_ids) if request.return_token_ids else None
                     ),
+                    hidden_states=hidden_states,
                 )
                 choices.append(choice_data)
                 continue
@@ -1482,6 +1555,14 @@ class OpenAIServingChat(OpenAIServing):
                 reasoning, content = reasoning_parser.extract_reasoning(
                     output.text, request=request
                 )
+                if hasattr(reasoning_parser, "extract_content_ids"):
+                    content_ids = reasoning_parser.extract_content_ids(token_ids)
+                    if not content_ids:
+                        if reasoning:
+                            num_reasoning_tokens += len(token_ids)
+                    else:
+                        num_reasoning_tokens += len(token_ids) - len(content_ids)
+
                 if not request.include_reasoning:
                     reasoning = None
             else:
@@ -1617,6 +1698,7 @@ class OpenAIServingChat(OpenAIServing):
                 token_ids=(
                     as_list(output.token_ids) if request.return_token_ids else None
                 ),
+                hidden_states=hidden_states,
             )
             choice_data = maybe_filter_parallel_tool_calls(choice_data, request)
 
@@ -1648,6 +1730,7 @@ class OpenAIServingChat(OpenAIServing):
             prompt_tokens=num_prompt_tokens,
             completion_tokens=num_generated_tokens,
             total_tokens=num_prompt_tokens + num_generated_tokens,
+            reasoning_tokens=num_reasoning_tokens,
         )
         if self.enable_prompt_tokens_details and final_res.num_cached_tokens:
             usage.prompt_tokens_details = PromptTokenUsageInfo(
@@ -1668,6 +1751,11 @@ class OpenAIServingChat(OpenAIServing):
             ),
             kv_transfer_params=final_res.kv_transfer_params,
         )
+
+        if choices:
+            response.chutes_verification = get_chutes_verification_value(
+                response.id, response.created, choices[0].message.content
+            )
 
         # Log complete response if output logging is enabled
         if self.enable_log_outputs and self.request_logger:

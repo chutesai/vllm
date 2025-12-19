@@ -146,6 +146,16 @@ class FrontendArgs:
     enable_auto_tool_choice: bool = False
     """Enable auto tool choice for supported models. Use `--tool-call-parser`
     to specify which parser to use."""
+    max_completion_tokens: int | None = None
+    """Hard upper bound for the number of new tokens each non-streaming request
+    is allowed to generate. Requests asking for more tokens will be capped at
+    this value. If --max-stream-completion-tokens is not set, this value is
+    also used for streaming requests."""
+    max_stream_completion_tokens: int | None = None
+    """Hard upper bound for the number of new tokens each streaming request is
+    allowed to generate. Requests asking for more tokens will be capped at this
+    value. If --max-completion-tokens is not set, this value is also used for
+    non-streaming requests."""
     exclude_tools_when_tool_choice_none: bool = False
     """If specified, exclude tool definitions in prompts when
     tool_choice='none'."""
@@ -171,6 +181,8 @@ class FrontendArgs:
     """Disable FastAPI's OpenAPI schema, Swagger UI, and ReDoc endpoint."""
     enable_prompt_tokens_details: bool = False
     """If set to True, enable prompt_tokens_details in usage."""
+    enable_return_hidden_states: bool = False
+    """If set to True, return hidden states from the model."""
     enable_server_load_tracking: bool = False
     """If set to True, enable tracking server_load_metrics in the app state."""
     enable_force_include_usage: bool = False

@@ -175,6 +175,7 @@ class OpenAIServingResponses(OpenAIServing):
         enable_force_include_usage: bool = False,
         enable_log_outputs: bool = False,
         log_error_stack: bool = False,
+        enable_return_hidden_states: bool = False,
     ) -> None:
         super().__init__(
             engine_client=engine_client,
@@ -187,6 +188,7 @@ class OpenAIServingResponses(OpenAIServing):
         self.chat_template = chat_template
         self.chat_template_content_format: Final = chat_template_content_format
         self.enable_log_outputs = enable_log_outputs
+        self.enable_return_hidden_states = enable_return_hidden_states
 
         self.reasoning_parser = self._get_reasoning_parser(
             reasoning_parser_name=reasoning_parser

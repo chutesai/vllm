@@ -1056,6 +1056,7 @@ async def init_app_state(
             enable_force_include_usage=args.enable_force_include_usage,
             enable_log_outputs=args.enable_log_outputs,
             log_error_stack=args.log_error_stack,
+            enable_return_hidden_states=args.enable_return_hidden_states,
         )
         if "generate" in supported_tasks
         else None
@@ -1071,13 +1072,12 @@ async def init_app_state(
             trust_request_chat_template=args.trust_request_chat_template,
             return_tokens_as_token_ids=args.return_tokens_as_token_ids,
             enable_auto_tools=args.enable_auto_tool_choice,
-            exclude_tools_when_tool_choice_none=args.exclude_tools_when_tool_choice_none,
-            tool_parser=args.tool_call_parser,
-            reasoning_parser=args.structured_outputs_config.reasoning_parser,
-            enable_prompt_tokens_details=args.enable_prompt_tokens_details,
             enable_force_include_usage=args.enable_force_include_usage,
             enable_log_outputs=args.enable_log_outputs,
             log_error_stack=args.log_error_stack,
+            max_completion_tokens=args.max_completion_tokens,
+            max_stream_completion_tokens=args.max_stream_completion_tokens,
+            enable_return_hidden_states=args.enable_return_hidden_states,
         )
         if "generate" in supported_tasks
         else None
@@ -1094,6 +1094,7 @@ async def init_app_state(
             enable_prompt_tokens_details=args.enable_prompt_tokens_details,
             enable_force_include_usage=args.enable_force_include_usage,
             log_error_stack=args.log_error_stack,
+            enable_return_hidden_states=args.enable_return_hidden_states,
         )
         if "generate" in supported_tasks
         else None

@@ -8,6 +8,7 @@ from collections.abc import Sequence as GenericSequence
 from typing import cast
 
 import jinja2
+from cllmv import generate as get_chutes_verification_value
 from fastapi import Request
 
 from vllm.engine.protocol import EngineClient
@@ -56,6 +57,7 @@ class OpenAIServingCompletion(OpenAIServing):
         enable_prompt_tokens_details: bool = False,
         enable_force_include_usage: bool = False,
         log_error_stack: bool = False,
+        enable_return_hidden_states: bool = False,
     ):
         super().__init__(
             engine_client=engine_client,
@@ -71,6 +73,7 @@ class OpenAIServingCompletion(OpenAIServing):
         self.enable_prompt_tokens_details = enable_prompt_tokens_details
         self.default_sampling_params = self.model_config.get_diff_sampling_param()
         self.enable_force_include_usage = enable_force_include_usage
+        self.enable_return_hidden_states = enable_return_hidden_states
         if self.default_sampling_params:
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
@@ -446,6 +449,15 @@ class OpenAIServingCompletion(OpenAIServing):
 
                     self._raise_if_error(finish_reason, request_id)
 
+                    hidden_states = None
+                    if (
+                        self.enable_return_hidden_states
+                        and request.return_hidden_states
+                        and output.hidden_states is not None
+                    ):
+                        # currently only support returning the last hidden state
+                        hidden_states = output.hidden_states[-1]
+
                     chunk = CompletionStreamResponse(
                         id=request_id,
                         created=created_time,
@@ -455,16 +467,15 @@ class OpenAIServingCompletion(OpenAIServing):
                                 index=i,
                                 text=delta_text,
                                 logprobs=logprobs,
-                                finish_reason=finish_reason,
-                                stop_reason=stop_reason,
-                                prompt_token_ids=prompt_token_ids_to_return,
-                                token_ids=(
-                                    as_list(output.token_ids)
-                                    if request.return_token_ids
-                                    else None
-                                ),
+                                finish_reason=output.finish_reason,
+                                stop_reason=output.stop_reason,
+                                token_ids=as_list(output.token_ids),
+                                hidden_states=hidden_states,
                             )
                         ],
+                    )
+                    chunk.chutes_verification = get_chutes_verification_value(
+                        chunk.id, chunk.created, delta_text
                     )
                     if include_continuous_usage:
                         prompt_tokens = num_prompt_tokens[prompt_idx]
@@ -498,6 +509,9 @@ class OpenAIServingCompletion(OpenAIServing):
                     model=model_name,
                     choices=[],
                     usage=final_usage_info,
+                )
+                final_usage_chunk.chutes_verification = get_chutes_verification_value(
+                    final_usage_chunk.id, final_usage_chunk.created, None
                 )
                 final_usage_data = final_usage_chunk.model_dump_json(
                     exclude_unset=False, exclude_none=True
@@ -584,6 +598,15 @@ class OpenAIServingCompletion(OpenAIServing):
                 else:
                     logprobs = None
 
+                hidden_states = None
+                if (
+                    self.enable_return_hidden_states
+                    and request.return_hidden_states
+                    and output.hidden_states is not None
+                ):
+                    # currently only support returning the last hidden state
+                    hidden_states = output.hidden_states[-1]
+
                 choice_data = CompletionResponseChoice(
                     index=len(choices),
                     text=output_text,
@@ -597,6 +620,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     token_ids=(
                         as_list(output.token_ids) if request.return_token_ids else None
                     ),
+                    hidden_states=hidden_states,
                 )
                 choices.append(choice_data)
 
@@ -622,7 +646,7 @@ class OpenAIServingCompletion(OpenAIServing):
         request_metadata.final_usage_info = usage
         if final_res_batch:
             kv_transfer_params = final_res_batch[0].kv_transfer_params
-        return CompletionResponse(
+        response = CompletionResponse(
             id=request_id,
             created=created_time,
             model=model_name,
@@ -630,6 +654,11 @@ class OpenAIServingCompletion(OpenAIServing):
             usage=usage,
             kv_transfer_params=kv_transfer_params,
         )
+        if choices:
+            response.chutes_verification = get_chutes_verification_value(
+                response.id, response.created, choices[0].text
+            )
+        return response
 
     def _create_completion_logprobs(
         self,
