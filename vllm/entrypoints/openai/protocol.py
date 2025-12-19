@@ -556,6 +556,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         | None
     ) = "none"
     reasoning_effort: Literal["low", "medium", "high"] | None = None
+    reasoning: Reasoning | None = None
     include_reasoning: bool = True
     parallel_tool_calls: bool | None = True
 

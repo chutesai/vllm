@@ -449,13 +449,14 @@ class OpenAIServingCompletion(OpenAIServing):
 
                     self._raise_if_error(finish_reason, request_id)
 
+                    # Only return hidden states on final chunk (when finished)
                     hidden_states = None
                     if (
-                        self.enable_return_hidden_states
+                        finish_reason is not None
+                        and self.enable_return_hidden_states
                         and request.return_hidden_states
                         and output.hidden_states is not None
                     ):
-                        # currently only support returning the last hidden state
                         hidden_states = output.hidden_states[-1]
 
                     chunk = CompletionStreamResponse(

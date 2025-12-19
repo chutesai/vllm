@@ -1176,17 +1176,9 @@ class OpenAIServingChat(OpenAIServing):
                                 delta=True,
                             )
 
-                    hidden_states = None
-                    if (
-                        self.enable_return_hidden_states
-                        and request.return_hidden_states
-                        and output.hidden_states is not None
-                    ):
-                        # currently only support returning the last hidden state
-                        hidden_states = output.hidden_states[-1]
-
                     if output.finish_reason is None:
-                        # Send token-by-token response for each request.n
+                        # Send token-by-token response for each request.
+                        # Note: hidden_states only returned on final chunk
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=i,
                             delta=delta_message,
@@ -1197,7 +1189,7 @@ class OpenAIServingChat(OpenAIServing):
                                 if request.return_token_ids
                                 else None
                             ),
-                            hidden_states=hidden_states,
+                            hidden_states=None,
                         )
 
                     # if the model is finished generating
@@ -1284,6 +1276,15 @@ class OpenAIServingChat(OpenAIServing):
                             finish_reason_ = (
                                 output.finish_reason if output.finish_reason else "stop"
                             )
+                        # Extract hidden states for final chunk only
+                        hidden_states = None
+                        if (
+                            self.enable_return_hidden_states
+                            and request.return_hidden_states
+                            and output.hidden_states is not None
+                        ):
+                            hidden_states = output.hidden_states[-1]
+
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=i,
                             delta=delta_message,
@@ -1295,6 +1296,7 @@ class OpenAIServingChat(OpenAIServing):
                                 if request.return_token_ids
                                 else None
                             ),
+                            hidden_states=hidden_states,
                         )
 
                         finish_reason_sent[i] = True
