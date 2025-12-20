@@ -1107,7 +1107,6 @@ class OpenAIServingChat(OpenAIServing):
 
                     # when only reasoning
                     elif self.reasoning_parser:
-                        is_reasoning = True
                         delta_message = reasoning_parser.extract_reasoning_streaming(
                             previous_text,
                             current_text,
@@ -1115,6 +1114,11 @@ class OpenAIServingChat(OpenAIServing):
                             previous_token_ids,
                             current_token_ids,
                             output.token_ids,
+                        )
+                        # Only count as reasoning tokens if delta has reasoning
+                        is_reasoning = (
+                            delta_message is not None
+                            and delta_message.reasoning is not None
                         )
                     # handle streaming just a content delta
                     else:
