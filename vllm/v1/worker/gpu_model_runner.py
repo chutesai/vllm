@@ -1642,6 +1642,8 @@ class GPUModelRunner(
             attn_group = self.attn_groups[kv_cache_gid][attn_gid]
             builder = attn_group.get_metadata_builder(ubid or 0)
             kv_cache_spec = kv_cache_groups[kv_cache_gid].kv_cache_spec
+            if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
+                kv_cache_spec = kv_cache_spec.kv_cache_specs[attn_group.layer_names[0]]
             cache_key = (kv_cache_spec, type(builder))
 
             cascade_attn_prefix_len = (
