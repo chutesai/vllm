@@ -887,6 +887,11 @@ class OpenAIServingChat(OpenAIServing):
                             )
                         )
                         harmony_tools_streamed[i] |= tools_streamed_flag
+                        # Count reasoning tokens for Harmony (analysis channel)
+                        is_reasoning = (
+                            delta_message is not None
+                            and delta_message.reasoning is not None
+                        )
                     # handle streaming deltas for tools with named tool_choice
                     elif tool_choice_function_name:
                         if (
