@@ -98,7 +98,11 @@ from vllm.usage.usage_lib import UsageContext
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 from vllm.utils.gc_utils import freeze_gc_heap
 from vllm.utils.network_utils import is_valid_ipv6_address
-from vllm.utils.system_utils import decorate_logs, set_ulimit
+from vllm.utils.system_utils import (
+    decorate_logs,
+    obfuscate_api_key_in_proctitle,
+    set_ulimit,
+)
 from vllm.version import __version__ as VLLM_VERSION
 
 prometheus_multiproc_dir: tempfile.TemporaryDirectory
@@ -1381,5 +1385,8 @@ if __name__ == "__main__":
     parser = make_arg_parser(parser)
     args = parser.parse_args()
     validate_parsed_serve_args(args)
+
+    # Obfuscate API keys in the process title so they don't appear in ps aux
+    obfuscate_api_key_in_proctitle(args.api_key)
 
     uvloop.run(run_server(args))
