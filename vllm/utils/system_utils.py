@@ -173,6 +173,27 @@ def set_process_title(
     setproctitle.setproctitle(f"{prefix}::{name}")
 
 
+def obfuscate_api_key_in_proctitle(api_keys: list[str] | None) -> None:
+    """Obfuscate API keys in the process title.
+
+    Replaces any API key values in the current process title with asterisks,
+    so they are not visible via `ps aux` or similar commands.
+
+    Args:
+        api_keys: List of API key values to obfuscate.
+    """
+    if not api_keys:
+        return
+
+    import setproctitle
+
+    title = setproctitle.getproctitle()
+    for key in api_keys:
+        if key:
+            title = title.replace(key, "*" * len(key))
+    setproctitle.setproctitle(title)
+
+
 def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
     """Add colored prefix to file output for log decoration."""
     if envs.NO_COLOR:
