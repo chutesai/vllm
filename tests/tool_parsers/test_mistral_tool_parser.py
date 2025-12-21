@@ -341,6 +341,86 @@ def test_extract_tool_calls(
     assert extracted_tool_calls.content == expected_content
 
 
+@pytest.mark.parametrize(
+    ids=[
+        "single_tool_devstral_args",
+        "single_tool_devstral_args_weather",
+        "multiple_tool_calls_devstral_args",
+        "devstral_args_with_newline",
+    ],
+    argnames=["model_output", "expected_tool_calls", "expected_content"],
+    argvalues=[
+        (
+            """[TOOL_CALLS]add[ARGS]{"a": 3.5, "b": 4}""",
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="add",
+                        arguments=json.dumps({"a": 3.5, "b": 4}),
+                    )
+                )
+            ],
+            None,
+        ),
+        (
+            """[TOOL_CALLS]get_current_weather[ARGS]{"city": "San Francisco", "state": "CA", "unit": "celsius"}""",  # noqa: E501
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="get_current_weather",
+                        arguments=json.dumps(
+                            {"city": "San Francisco", "state": "CA", "unit": "celsius"}
+                        ),
+                    )
+                )
+            ],
+            None,
+        ),
+        (
+            """[TOOL_CALLS]add[ARGS]{"a": 3.5, "b": 4}[TOOL_CALLS]multiply[ARGS]{"a": 3, "b": 6}""",  # noqa: E501
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="add", arguments=json.dumps({"a": 3.5, "b": 4})
+                    )
+                ),
+                ToolCall(
+                    function=FunctionCall(
+                        name="multiply", arguments=json.dumps({"a": 3, "b": 6})
+                    )
+                ),
+            ],
+            None,
+        ),
+        (
+            """[TOOL_CALLS]
+add[ARGS]{"a": 3.5, "b": 4}""",
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="add",
+                        arguments=json.dumps({"a": 3.5, "b": 4}),
+                    )
+                )
+            ],
+            None,
+        ),
+    ],
+)
+def test_extract_tool_calls_devstral_args_format(
+    mistral_tool_parser, model_output, expected_tool_calls, expected_content
+):
+    """Test the Devstral [ARGS] format: [TOOL_CALLS]function_name[ARGS]{json}"""
+    extracted_tool_calls = mistral_tool_parser.extract_tool_calls(
+        model_output, request=None
+    )  # type: ignore[arg-type]
+    assert extracted_tool_calls.tools_called
+
+    assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
+
+    assert extracted_tool_calls.content == expected_content
+
+
 def _test_extract_tool_calls_streaming(
     tool_parser, tokenizer, model_output, tools, expected_tool_calls, expected_content
 ):
@@ -695,6 +775,107 @@ def test_extract_tool_calls_streaming_one_chunk(
     expected_tool_calls,
     expected_content,
 ):
+    if isinstance(mistral_tokenizer, MistralTokenizer):
+        all_token_ids = mistral_tokenizer.encode(model_output)
+    else:
+        all_token_ids = mistral_tokenizer.encode(model_output, add_special_tokens=False)
+    all_token_ids = fix_tool_call_tokenization(
+        all_token_ids, mistral_tool_parser, mistral_tokenizer
+    )
+
+    delta_message = mistral_tool_parser.extract_tool_calls_streaming(
+        previous_text="",
+        current_text=model_output,
+        delta_text=model_output,
+        previous_token_ids=[],
+        current_token_ids=all_token_ids,
+        delta_token_ids=all_token_ids,
+        request=None,
+    )  # type: ignore[arg-type]
+    assert isinstance(delta_message, DeltaMessage)
+    assert len(delta_message.tool_calls) == len(expected_tool_calls)
+
+    assert_tool_calls(delta_message.tool_calls, expected_tool_calls)
+
+    if delta_message.content is None:
+        assert expected_content == ""
+    else:
+        assert delta_message.content == expected_content
+
+
+@pytest.mark.parametrize(
+    ids=[
+        "single_tool_devstral_args",
+        "single_tool_devstral_args_weather",
+        "multiple_tool_calls_devstral_args",
+        "content_before_tool_devstral_args",
+    ],
+    argnames=["model_output", "expected_tool_calls", "expected_content"],
+    argvalues=[
+        (
+            """[TOOL_CALLS]add[ARGS]{"a": 3.5, "b": 4}""",
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="add",
+                        arguments=json.dumps({"a": 3.5, "b": 4}),
+                    )
+                )
+            ],
+            "",
+        ),
+        (
+            """[TOOL_CALLS]get_current_weather[ARGS]{"city": "San Francisco", "state": "CA", "unit": "celsius"}""",  # noqa: E501
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="get_current_weather",
+                        arguments=json.dumps(
+                            {"city": "San Francisco", "state": "CA", "unit": "celsius"}
+                        ),
+                    )
+                )
+            ],
+            "",
+        ),
+        (
+            """[TOOL_CALLS]add[ARGS]{"a": 3.5, "b": 4}[TOOL_CALLS]multiply[ARGS]{"a": 3, "b": 6}""",  # noqa: E501
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="add", arguments=json.dumps({"a": 3.5, "b": 4})
+                    )
+                ),
+                ToolCall(
+                    function=FunctionCall(
+                        name="multiply", arguments=json.dumps({"a": 3, "b": 6})
+                    )
+                ),
+            ],
+            "",
+        ),
+        (
+            """bla[TOOL_CALLS]add[ARGS]{"a": 3.5, "b": 4}""",
+            [
+                ToolCall(
+                    function=FunctionCall(
+                        name="add",
+                        arguments=json.dumps({"a": 3.5, "b": 4}),
+                    )
+                )
+            ],
+            "bla",
+        ),
+    ],
+)
+def test_extract_tool_calls_streaming_one_chunk_devstral_args(
+    mistral_tool_parser,
+    mistral_tokenizer,
+    model_output,
+    expected_tool_calls,
+    expected_content,
+):
+    """Test streaming for Devstral [ARGS] format: [TOOL_CALLS]fn[ARGS]{json}"""
     if isinstance(mistral_tokenizer, MistralTokenizer):
         all_token_ids = mistral_tokenizer.encode(model_output)
     else:

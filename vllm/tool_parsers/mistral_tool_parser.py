@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from enum import Enum, auto
 from random import choices
 from string import ascii_letters, digits
-from typing import Any
+from typing import Any, Literal
 
 import ijson
 import regex as re
@@ -31,6 +31,9 @@ from vllm.tool_parsers.abstract_tool_parser import (
 logger = init_logger(__name__)
 
 ALPHANUMERIC = ascii_letters + digits
+
+# Format types for Mistral tool calls
+FormatType = Literal["legacy", "devstral", "devstral_args"]
 
 
 class StreamingState(Enum):
@@ -67,6 +70,121 @@ def _is_pre_v11_tokeniser(model_tokenizer: TokenizerLike) -> bool:
     return not (
         isinstance(model_tokenizer, MistralTokenizer) and model_tokenizer.version >= 11
     )
+
+
+def _detect_tool_call_format(text: str, bot_token: str) -> FormatType | None:
+    """
+    Detect the format of Mistral tool calls based on what follows [TOOL_CALLS].
+
+    Supports three format variants:
+    1. Legacy format (Mistral-7B-Instruct-v0.3):
+       [TOOL_CALLS] [{"name": "function_name", "arguments": {json_args}}, ...]
+
+    2. Devstral format (some newer models):
+       [TOOL_CALLS]function_name{json_args}
+
+    3. Devstral with [ARGS] format (Devstral-Small-2505, Devstral-2-123B):
+       [TOOL_CALLS]function_name[ARGS]{json_args}
+
+    Returns:
+        "legacy" if JSON array format
+        "devstral" if name{json} format
+        "devstral_args" if name[ARGS]{json} format
+        None if format cannot be determined yet (need more text)
+    """
+    idx = text.find(bot_token)
+    if idx == -1:
+        return None
+
+    after_token = text[idx + len(bot_token) :]
+    after_stripped = after_token.lstrip()
+
+    if not after_stripped:
+        return None
+
+    # Legacy format starts with '['
+    if after_stripped.startswith("["):
+        return "legacy"
+
+    # If first char is a letter or underscore, it's a devstral variant
+    if after_stripped[0].isalpha() or after_stripped[0] == "_":
+        # Check if [ARGS] marker is present
+        if "[ARGS]" in after_stripped:
+            return "devstral_args"
+        elif "{" in after_stripped:
+            # Has opening brace but no [ARGS], it's the simpler devstral format
+            return "devstral"
+        else:
+            # Can't determine yet - might be partial
+            return None
+
+    return None
+
+
+def _extract_json_object(text: str) -> dict:
+    """
+    Extract a JSON object from text, handling incomplete JSON gracefully.
+
+    Uses brace counting to find complete JSON objects and can auto-complete
+    missing closing braces for incomplete output.
+
+    Args:
+        text: Text that should start with '{' and contain JSON
+
+    Returns:
+        Parsed dict or empty dict if parsing fails
+    """
+    if not text:
+        return {}
+
+    text = text.strip()
+    if not text.startswith("{"):
+        return {}
+
+    # First try to parse as-is
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to find a complete JSON object using brace counting
+    brace_count = 0
+    in_string = False
+    escape_next = False
+
+    for i, char in enumerate(text):
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == "\\":
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if not in_string:
+            if char == "{":
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+                if brace_count == 0:
+                    try:
+                        return json.loads(text[: i + 1])
+                    except json.JSONDecodeError:
+                        pass
+                    break
+
+    # If we couldn't find complete JSON, try adding closing braces
+    if brace_count > 0:
+        try:
+            return json.loads(text + "}" * brace_count)
+        except json.JSONDecodeError:
+            pass
+
+    return {}
 
 
 class MistralToolParser(ToolParser):
@@ -131,9 +249,12 @@ class MistralToolParser(ToolParser):
         request: ChatCompletionRequest,
     ) -> ExtractedToolCallInformation:
         """
-        Extract the tool calls from a complete model response. Requires
-        find-and-replacing single quotes with double quotes for JSON parsing,
-        make sure your tool call arguments don't ever include quotes!
+        Extract the tool calls from a complete model response.
+
+        Supports three formats:
+        1. Legacy: [TOOL_CALLS] [{"name": "fn", "arguments": {...}}]
+        2. Devstral: [TOOL_CALLS]fn_name{...}
+        3. Devstral with [ARGS]: [TOOL_CALLS]fn_name[ARGS]{...}
         """
 
         # case -- if a tool call token is not present, return a text response
@@ -142,35 +263,53 @@ class MistralToolParser(ToolParser):
                 tools_called=False, tool_calls=[], content=model_output
             )
 
-        # first remove the BOT token
-        tool_content = model_output.replace(self.bot_token, "").strip()
+        # Detect the format dynamically based on actual content
+        detected_format = _detect_tool_call_format(model_output, self.bot_token)
+
+        # Fall back to tokenizer version if detection is inconclusive
+        if detected_format is None:
+            detected_format = "legacy" if self._is_pre_v11 else "devstral"
 
         try:
             try:
-                if not self._is_pre_v11:
+                if detected_format in ("devstral", "devstral_args"):
                     function_call_arr = []
                     for single_tool_content in model_output.split(self.bot_token):
                         if "{" not in single_tool_content:
                             continue
 
-                        end_name = single_tool_content.find("{")
-                        fn_name, args = (
-                            single_tool_content[:end_name],
-                            single_tool_content[end_name:],
-                        )
+                        # Handle [ARGS] marker if present
+                        if "[ARGS]" in single_tool_content:
+                            # Format: fn_name[ARGS]{json}
+                            args_marker_pos = single_tool_content.find("[ARGS]")
+                            fn_name = single_tool_content[:args_marker_pos].strip()
+                            args_start = args_marker_pos + len("[ARGS]")
+                            args = single_tool_content[args_start:].strip()
+                        else:
+                            # Format: fn_name{json}
+                            end_name = single_tool_content.find("{")
+                            fn_name = single_tool_content[:end_name].strip()
+                            args = single_tool_content[end_name:]
 
-                        # fn_name is encoded outside serialized json dump
-                        # only arguments are serialized
+                        # Use robust JSON extraction for potentially incomplete JSON
+                        parsed_args = _extract_json_object(args)
+                        if not parsed_args:
+                            # Fall back to standard json.loads
+                            parsed_args = json.loads(args)
+
                         function_call_arr.append(
-                            {"name": fn_name, "arguments": json.loads(args)}
+                            {"name": fn_name, "arguments": parsed_args}
                         )
                 else:
+                    # Legacy format: JSON array
+                    tool_content = model_output.replace(self.bot_token, "").strip()
                     function_call_arr = json.loads(tool_content)
             except json.JSONDecodeError:
                 # use a regex to find the part corresponding to the tool call.
                 # NOTE: This use case should not happen if the model is trained
                 # correctly. It's an easy possible fix so it's included, but
                 # can be brittle for very complex / highly nested tool calls
+                tool_content = model_output.replace(self.bot_token, "").strip()
                 raw_tool_call = self.tool_call_regex.findall(tool_content)[0]
                 function_call_arr = json.loads(raw_tool_call)
 
@@ -304,14 +443,31 @@ class MistralToolParser(ToolParser):
             if self.current_tool_name is None:
                 self.current_tool_name = ""
             # The name stops where the arguments start
-            # And the arguments start with the `{` char
-            if "{" in delta_text:
+            # Arguments can start with '{' directly OR with '[ARGS]{' marker
+            # Check for [ARGS] marker first (Devstral format)
+            if "[ARGS]" in delta_text:
+                tool_id = MistralToolCall.generate_random_id()
+                args_marker_pos = delta_text.find("[ARGS]")
+                delta_function_name = delta_text[:args_marker_pos]
+                self.current_tool_name += delta_function_name
+                # Skip past [ARGS] to get to the arguments
+                delta_text = delta_text[args_marker_pos + len("[ARGS]") :]
+                self.streaming_state = StreamingState.PARSING_ARGUMENTS
+            elif "{" in delta_text:
                 tool_id = MistralToolCall.generate_random_id()
                 delta_function_name = delta_text.split("{")[0]
                 self.current_tool_name += delta_function_name
                 delta_text = delta_text[len(delta_function_name) :]
                 self.streaming_state = StreamingState.PARSING_ARGUMENTS
             else:
+                # Check if we might be accumulating a partial [ARGS] token
+                # e.g., current_tool_name ends with "[" or "[A" etc.
+                potential_partial = self.current_tool_name + delta_text
+                for i in range(1, len("[ARGS]")):
+                    if potential_partial.endswith("[ARGS]"[:i]):
+                        # Could be partial [ARGS], keep buffering
+                        self.current_tool_name += delta_text
+                        return []
                 # we want to send the tool name once it's complete
                 self.current_tool_name += delta_text
                 return []
