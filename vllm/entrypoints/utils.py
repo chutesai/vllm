@@ -250,6 +250,7 @@ def log_non_default_args(args: Namespace | EngineArgs):
             "Unsupported argument type. Must be Namespace or EngineArgs instance."
         )
 
+    non_default_args.pop("api_key", None)
     logger.info("non-default args: %s", non_default_args)
 
 
