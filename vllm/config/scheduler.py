@@ -137,6 +137,14 @@ class SchedulerConfig:
     speculative decoding and pipeline parallelism.
     """
 
+    enable_cc_optimize: bool = False
+    """If set to True, enable optimizations for confidential computing
+    environments (Intel TDX with NVIDIA protected PCIe). This moves
+    GPU-to-CPU tensor copies to a dedicated worker thread to avoid
+    blocking the main thread when cudaMemcpy becomes synchronous due
+    to memory encryption overhead.
+    """
+
     stream_interval: int = Field(default=1, ge=1)
     """The interval (or buffer size) for streaming in terms of token length.
     A smaller value (1) makes streaming smoother by sending each token immediately,

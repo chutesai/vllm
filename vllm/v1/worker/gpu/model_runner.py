@@ -25,7 +25,11 @@ from vllm.v1.outputs import (
     LogprobsTensors,
     ModelRunnerOutput,
 )
-from vllm.v1.worker.gpu.async_utils import AsyncOutput, async_barrier
+from vllm.v1.worker.gpu.async_utils import (
+    AsyncOutput,
+    AsyncOutputCC,
+    async_barrier,
+)
 from vllm.v1.worker.gpu.attn_utils import (
     build_attn_metadata,
     get_kv_cache_spec,
@@ -110,6 +114,19 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         else:
             self.input_prep_event = None
             self.structured_outputs_event = None
+
+        # Confidential computing optimization: use dedicated thread for D2H
+        # copies to avoid blocking main thread when cudaMemcpy is synchronous.
+        self.enable_cc_optimize = self.scheduler_config.enable_cc_optimize
+        if self.enable_cc_optimize:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self.cc_copy_executor: ThreadPoolExecutor | None = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="CCHostCopy"
+            )
+            logger.info("Confidential computing optimization enabled")
+        else:
+            self.cc_copy_executor = None
 
         if self.speculative_config is not None:
             self.do_spec_decode = True
@@ -974,19 +991,30 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             kv_connector_output=None,
             num_nans_in_logits=None,
         )
-        async_output = AsyncOutput(
-            model_runner_output=model_runner_output,
-            sampler_output=sampler_output,
-            num_sampled_tokens=num_sampled,
-            copy_stream=self.output_copy_stream,
-            copy_event=self.output_copy_event,
-        )
+        # Create async output object based on optimization mode.
+        # In CC mode, we use AsyncOutputCC which defers all D2H copies to a
+        # worker thread to avoid blocking when cudaMemcpy is synchronous.
+        if self.cc_copy_executor is not None:
+            async_output = AsyncOutputCC(
+                model_runner_output=model_runner_output,
+                sampler_output=sampler_output,
+                num_sampled_tokens=num_sampled,
+                copy_executor=self.cc_copy_executor,
+            )
+        else:
+            async_output = AsyncOutput(
+                model_runner_output=model_runner_output,
+                sampler_output=sampler_output,
+                num_sampled_tokens=num_sampled,
+                copy_stream=self.output_copy_stream,
+                copy_event=self.output_copy_event,
+            )
 
         # Postprocess results and update request states.
         # NOTE: This is intentionally done after creating the AsyncOutput,
         # ensuring that `copy_event` is recorded before calling postprocess.
         # This sequencing may slightly reduce latency as async D2H copy does not
-        # need to wait for the postprocess to finish.
+        # need to wait for the postprocess to finish (for non-CC mode).
         self.postprocess(
             input_batch, sampler_output.sampled_token_ids, num_sampled, num_rejected
         )

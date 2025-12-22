@@ -251,6 +251,124 @@ class AsyncGPUModelRunnerOutput(AsyncModelRunnerOutput):
         return output
 
 
+class AsyncGPUModelRunnerOutputCC(AsyncModelRunnerOutput):
+    """Async output optimized for confidential computing environments.
+
+    In confidential computing (Intel TDX + NVIDIA protected PCIe),
+    cudaMemcpyAsync becomes effectively synchronous due to memory
+    encryption overhead. This class moves the entire D2H copy operation
+    to a dedicated worker thread to avoid blocking the main thread.
+    """
+
+    def __init__(
+        self,
+        model_runner_output: ModelRunnerOutput,
+        sampled_token_ids: torch.Tensor,
+        logprobs_tensors: LogprobsTensors | None,
+        invalid_req_indices: list[int],
+        copy_executor: "ThreadPoolExecutor",
+        vocab_size: int,
+    ):
+        from concurrent.futures import Future
+
+        self._model_runner_output = model_runner_output
+        self._invalid_req_indices = invalid_req_indices
+        self.vocab_size = vocab_size
+
+        # Keep references to device tensors until copy completes.
+        self._sampled_token_ids = sampled_token_ids
+        self._logprobs_tensors = logprobs_tensors
+
+        # Record event on current stream to ensure GPU work is complete.
+        self.copy_event = torch.cuda.Event()
+        self.copy_event.record(torch.cuda.current_stream())
+
+        # Submit copy tasks to worker thread.
+        self.sampled_token_ids_future: Future[torch.Tensor] = copy_executor.submit(
+            self._sync_copy_to_cpu, sampled_token_ids
+        )
+        if logprobs_tensors is not None:
+            self.logprobs_tensors_future: Future[LogprobsTensors] | None = (
+                copy_executor.submit(self._sync_copy_logprobs, logprobs_tensors)
+            )
+        else:
+            self.logprobs_tensors_future = None
+
+        # For compatibility with set_async_sampled_token_ids, we provide
+        # a lazy property that resolves the future when accessed.
+        self._sampled_token_ids_cpu_cached: torch.Tensor | None = None
+
+    @property
+    def sampled_token_ids_cpu(self) -> torch.Tensor:
+        """Lazily resolve the future when the CPU tensor is accessed."""
+        if self._sampled_token_ids_cpu_cached is None:
+            self._sampled_token_ids_cpu_cached = self.sampled_token_ids_future.result()
+        return self._sampled_token_ids_cpu_cached
+
+    @property
+    def async_copy_ready_event(self) -> torch.cuda.Event:
+        """Return a dummy event - in CC mode we use futures instead.
+
+        The event is already synchronized when sampled_token_ids_cpu is
+        accessed (via future.result()), so this is just for interface
+        compatibility. We return an already-recorded event.
+        """
+        # Access the property to ensure the future is resolved
+        _ = self.sampled_token_ids_cpu
+        # Return an event that's already "done" (recorded on current stream)
+        event = torch.cuda.Event()
+        event.record()
+        return event
+
+    def _sync_copy_to_cpu(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Copy tensor to CPU, synchronizing first."""
+        self.copy_event.synchronize()
+        return tensor.cpu()
+
+    def _sync_copy_logprobs(self, logprobs: LogprobsTensors) -> LogprobsTensors:
+        """Copy LogprobsTensors to CPU, synchronizing first."""
+        self.copy_event.synchronize()
+        return LogprobsTensors(
+            logprobs.logprob_token_ids.cpu(),
+            logprobs.logprobs.cpu(),
+            logprobs.selected_token_ranks.cpu(),
+        )
+
+    def get_output(self) -> ModelRunnerOutput:
+        """Resolve futures and return ModelRunnerOutput."""
+        # Use the cached/lazy property
+        sampled_token_ids_cpu = self.sampled_token_ids_cpu
+        logprobs_tensors_cpu = (
+            self.logprobs_tensors_future.result()
+            if self.logprobs_tensors_future is not None
+            else None
+        )
+
+        # Release device tensors.
+        del self._logprobs_tensors
+        del self._sampled_token_ids
+
+        max_gen_len = sampled_token_ids_cpu.shape[-1]
+        if max_gen_len == 1:
+            valid_sampled_token_ids = sampled_token_ids_cpu.tolist()
+            for i in self._invalid_req_indices:
+                valid_sampled_token_ids[i].clear()
+            cu_num_tokens = None
+        else:
+            valid_sampled_token_ids, cu_num_tokens = RejectionSampler.parse_output(
+                sampled_token_ids_cpu,
+                self.vocab_size,
+                self._invalid_req_indices,
+                return_cu_num_tokens=logprobs_tensors_cpu is not None,
+            )
+
+        output = self._model_runner_output
+        output.sampled_token_ids = valid_sampled_token_ids
+        if logprobs_tensors_cpu:
+            output.logprobs = logprobs_tensors_cpu.tolists(cu_num_tokens)
+        return output
+
+
 class ExecuteModelState(NamedTuple):
     """Ephemeral cached state transferred between execute_model() and
     sample_tokens(), after execute_model() returns None."""
@@ -465,6 +583,18 @@ class GPUModelRunner(
         if self.use_async_scheduling:
             self.async_output_copy_stream = torch.cuda.Stream()
             self.prepare_inputs_event = torch.Event()
+
+        # Confidential computing optimization: use dedicated thread for D2H
+        # copies to avoid blocking main thread when cudaMemcpy is synchronous.
+        self.enable_cc_optimize = self.scheduler_config.enable_cc_optimize
+        self.cc_copy_executor: ThreadPoolExecutor | None = None
+        if self.enable_cc_optimize:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self.cc_copy_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="CCHostCopy"
+            )
+            logger.info("Confidential computing optimization enabled")
 
         # self.cudagraph_batch_sizes sorts in ascending order.
         if (
@@ -3410,14 +3540,26 @@ class GPUModelRunner(
         with record_function_or_nullcontext(
             "gpu_model_runner: AsyncGPUModelRunnerOutput"
         ):
-            async_output = AsyncGPUModelRunnerOutput(
-                model_runner_output=output,
-                sampled_token_ids=sampler_output.sampled_token_ids,
-                logprobs_tensors=sampler_output.logprobs_tensors,
-                invalid_req_indices=invalid_req_indices,
-                async_output_copy_stream=self.async_output_copy_stream,
-                vocab_size=self.input_batch.vocab_size,
-            )
+            # Use CC-optimized version if enabled, which moves D2H copies
+            # to a worker thread to avoid blocking when cudaMemcpy is sync.
+            if self.cc_copy_executor is not None:
+                async_output = AsyncGPUModelRunnerOutputCC(
+                    model_runner_output=output,
+                    sampled_token_ids=sampler_output.sampled_token_ids,
+                    logprobs_tensors=sampler_output.logprobs_tensors,
+                    invalid_req_indices=invalid_req_indices,
+                    copy_executor=self.cc_copy_executor,
+                    vocab_size=self.input_batch.vocab_size,
+                )
+            else:
+                async_output = AsyncGPUModelRunnerOutput(
+                    model_runner_output=output,
+                    sampled_token_ids=sampler_output.sampled_token_ids,
+                    logprobs_tensors=sampler_output.logprobs_tensors,
+                    invalid_req_indices=invalid_req_indices,
+                    async_output_copy_stream=self.async_output_copy_stream,
+                    vocab_size=self.input_batch.vocab_size,
+                )
         with record_function_or_nullcontext(
             "gpu_model_runner: set_async_sampled_token_ids"
         ):
