@@ -1658,18 +1658,14 @@ class GPUModelRunner(
                     ],
                 )
 
-            # UniformTypeKVCacheSpecs is not hashable, and is potentially not unique
-            # enough given we do not know which sub-spec is to constrcut the metadata
-            # builder i.e. `(kv_cache_spec, type(builder))` may not be unique enough.
-            supports_caching = builder.supports_update_block_table and not isinstance(
-                kv_cache_spec, UniformTypeKVCacheSpecs
-            )
-
             if for_cudagraph_capture:
                 attn_metadata_i = builder.build_for_cudagraph_capture(
                     common_attn_metadata
                 )
-            elif supports_caching and cache_key in cached_attn_metadata:
+            elif (
+                cache_key in cached_attn_metadata
+                and builder.supports_update_block_table
+            ):
                 attn_metadata_i = builder.update_block_table(
                     cached_attn_metadata[cache_key],
                     common_attn_metadata.block_table_tensor,
@@ -1681,7 +1677,7 @@ class GPUModelRunner(
                     common_attn_metadata=common_attn_metadata,
                     **extra_attn_metadata_args,
                 )
-                if supports_caching:
+                if builder.supports_update_block_table:
                     cached_attn_metadata[cache_key] = attn_metadata_i
 
             if ubid is None:
