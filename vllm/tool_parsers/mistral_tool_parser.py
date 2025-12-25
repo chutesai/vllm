@@ -257,7 +257,7 @@ class MistralToolParser(ToolParser):
         3. Devstral with [ARGS]: [TOOL_CALLS]fn_name[ARGS]{...}
         """
 
-        # case -- if a tool call token is not present, return a text response
+        # If the tool call token is not present, return a text response
         if self.bot_token not in model_output:
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
@@ -270,78 +270,80 @@ class MistralToolParser(ToolParser):
         if detected_format is None:
             detected_format = "legacy" if self._is_pre_v11 else "devstral"
 
-        try:
-            try:
-                if detected_format in ("devstral", "devstral_args"):
-                    function_call_arr = []
-                    for single_tool_content in model_output.split(self.bot_token):
-                        if "{" not in single_tool_content:
-                            continue
+        content_and_raw_tool_calls = model_output.split(self.bot_token)
+        content = content_and_raw_tool_calls[0]
+        
+        function_call_arr = []
 
-                        # Handle [ARGS] marker if present
-                        if "[ARGS]" in single_tool_content:
-                            # Format: fn_name[ARGS]{json}
-                            args_marker_pos = single_tool_content.find("[ARGS]")
-                            fn_name = single_tool_content[:args_marker_pos].strip()
-                            args_start = args_marker_pos + len("[ARGS]")
-                            args = single_tool_content[args_start:].strip()
-                        else:
-                            # Format: fn_name{json}
-                            end_name = single_tool_content.find("{")
-                            fn_name = single_tool_content[:end_name].strip()
-                            args = single_tool_content[end_name:]
+        if detected_format in ("devstral", "devstral_args"):
+            for single_tool_content in model_output.split(self.bot_token)[1:]:
+                if "{" not in single_tool_content:
+                    continue
 
-                        # Use robust JSON extraction for potentially incomplete JSON
-                        parsed_args = _extract_json_object(args)
-                        if not parsed_args:
-                            # Fall back to standard json.loads
-                            parsed_args = json.loads(args)
-
-                        function_call_arr.append(
-                            {"name": fn_name, "arguments": parsed_args}
-                        )
+                # Handle [ARGS] marker if present
+                if "[ARGS]" in single_tool_content:
+                    # Format: fn_name[ARGS]{json}
+                    args_marker_pos = single_tool_content.find("[ARGS]")
+                    fn_name = single_tool_content[:args_marker_pos].strip()
+                    args_start = args_marker_pos + len("[ARGS]")
+                    args = single_tool_content[args_start:].strip()
                 else:
-                    # Legacy format: JSON array
-                    tool_content = model_output.replace(self.bot_token, "").strip()
-                    function_call_arr = json.loads(tool_content)
-            except json.JSONDecodeError:
-                # use a regex to find the part corresponding to the tool call.
-                # NOTE: This use case should not happen if the model is trained
-                # correctly. It's an easy possible fix so it's included, but
-                # can be brittle for very complex / highly nested tool calls
-                tool_content = model_output.replace(self.bot_token, "").strip()
+                    # Format: fn_name{json}
+                    end_name = single_tool_content.find("{")
+                    fn_name = single_tool_content[:end_name].strip()
+                    args = single_tool_content[end_name:]
+
+                # Use robust JSON extraction for potentially incomplete JSON
+                parsed_args = _extract_json_object(args)
+                if not parsed_args:
+                    # Fall back to standard json.loads
+                    try:
+                        parsed_args = json.loads(args)
+                    except json.JSONDecodeError:
+                        # Fallback to raw string
+                        parsed_args = args
+
+                function_call_arr.append(
+                    {"name": fn_name, "arguments": parsed_args}
+                )
+        else:
+            # Legacy format: JSON array
+            tool_content = model_output.replace(self.bot_token, "").strip()
+            try:
                 raw_tool_call = self.tool_call_regex.findall(tool_content)[0]
                 function_call_arr = json.loads(raw_tool_call)
-
-            # Tool Call
-            tool_calls: list[MistralToolCall] = [
-                MistralToolCall(
-                    type="function",
-                    function=FunctionCall(
-                        name=raw_function_call["name"],
-                        # function call args are JSON but as a string
-                        arguments=json.dumps(
-                            raw_function_call["arguments"], ensure_ascii=False
-                        ),
-                    ),
+            except (IndexError, json.JSONDecodeError) as e:
+                logger.exception(f"Error in extracting tool call from response: {e}")
+                return ExtractedToolCallInformation(
+                    tools_called=False,
+                    tool_calls=[],
+                    content=content if len(content) > 0 else None,
                 )
-                for raw_function_call in function_call_arr
-            ]
 
-            # get any content before  the tool call
-            content = model_output.split(self.bot_token)[0]
-            return ExtractedToolCallInformation(
-                tools_called=True,
-                tool_calls=tool_calls,
-                content=content if len(content) > 0 else None,
+        # Tool Call
+        tool_calls: list[MistralToolCall] = [
+            MistralToolCall(
+                type="function",
+                function=FunctionCall(
+                    name=raw_function_call["name"],
+                    # function call args are JSON but as a string
+                    arguments=(
+                        json.dumps(
+                            raw_function_call["arguments"], ensure_ascii=False
+                        )
+                        if isinstance(raw_function_call["arguments"], (dict, list))
+                        else str(raw_function_call["arguments"])
+                    ),
+                ),
             )
+            for raw_function_call in function_call_arr
+        ]
 
-        except Exception:
-            logger.exception("Error in extracting tool call from response.")
-            # return information to just treat the tool call as regular JSON
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=tool_content
-            )
+        return ExtractedToolCallInformation(
+            tools_called=True,
+            tool_calls=tool_calls,
+            content=content if len(content) > 0 else None,
+        )
 
     def extract_tool_calls_streaming(
         self,
