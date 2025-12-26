@@ -1261,17 +1261,21 @@ class OpenAIServingChat(OpenAIServing):
 
                             # check to see if there's anything left to stream
                             remaining_call = expected_call.replace(actual_call, "", 1)
-                            # set that as a delta message
-                            delta_message = DeltaMessage(
-                                tool_calls=[
-                                    DeltaToolCall(
-                                        index=index,
-                                        function=DeltaFunctionCall(
-                                            arguments=remaining_call
-                                        ).model_dump(exclude_none=True),
-                                    )
-                                ]
-                            )
+                            # only overwrite delta_message if there are actually
+                            # remaining arguments to stream that weren't already
+                            # in the current delta; otherwise keep the original
+                            # delta_message which includes the function name
+                            if remaining_call and remaining_call != expected_call:
+                                delta_message = DeltaMessage(
+                                    tool_calls=[
+                                        DeltaToolCall(
+                                            index=index,
+                                            function=DeltaFunctionCall(
+                                                arguments=remaining_call
+                                            ).model_dump(exclude_none=True),
+                                        )
+                                    ]
+                                )
 
                         # Send the finish response for each request.n only once
                         # In OpenAI's API, when a tool is called, the
