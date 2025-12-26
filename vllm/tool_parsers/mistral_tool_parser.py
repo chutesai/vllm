@@ -272,7 +272,7 @@ class MistralToolParser(ToolParser):
 
         content_and_raw_tool_calls = model_output.split(self.bot_token)
         content = content_and_raw_tool_calls[0]
-        
+
         function_call_arr = []
 
         if detected_format in ("devstral", "devstral_args"):
@@ -303,9 +303,7 @@ class MistralToolParser(ToolParser):
                         # Fallback to raw string
                         parsed_args = args
 
-                function_call_arr.append(
-                    {"name": fn_name, "arguments": parsed_args}
-                )
+                function_call_arr.append({"name": fn_name, "arguments": parsed_args})
         else:
             # Legacy format: JSON array
             tool_content = model_output.replace(self.bot_token, "").strip()
@@ -313,7 +311,7 @@ class MistralToolParser(ToolParser):
                 raw_tool_call = self.tool_call_regex.findall(tool_content)[0]
                 function_call_arr = json.loads(raw_tool_call)
             except (IndexError, json.JSONDecodeError) as e:
-                logger.exception(f"Error in extracting tool call from response: {e}")
+                logger.exception("Error in extracting tool call from response: %s", e)
                 return ExtractedToolCallInformation(
                     tools_called=False,
                     tool_calls=[],
@@ -328,9 +326,7 @@ class MistralToolParser(ToolParser):
                     name=raw_function_call["name"],
                     # function call args are JSON but as a string
                     arguments=(
-                        json.dumps(
-                            raw_function_call["arguments"], ensure_ascii=False
-                        )
+                        json.dumps(raw_function_call["arguments"], ensure_ascii=False)
                         if isinstance(raw_function_call["arguments"], (dict, list))
                         else str(raw_function_call["arguments"])
                     ),
