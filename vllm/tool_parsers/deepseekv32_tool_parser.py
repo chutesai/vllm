@@ -135,6 +135,32 @@ class DeepSeekV32ToolParser(ToolParser):
         """Generate a unique tool call ID."""
         return f"call_{uuid.uuid4().hex[:24]}"
 
+    def _get_partial_tool_start(self, text: str) -> str | None:
+        """
+        Check if text ends with a partial tool call start tag.
+        Returns the partial tag if found, None otherwise.
+
+        This handles cases like:
+        - "<" (could be start of <function_calls> or <｜DSML｜function_calls>)
+        - "<｜DSML｜" (partial DSML tag)
+        - "<｜DSML｜function_c" (partial tag)
+        - "<function_" (partial non-DSML tag)
+        """
+        # Possible start patterns to check for partial matches
+        patterns = [
+            "<｜DSML｜function_calls>",
+            "<function_calls>",
+        ]
+
+        # Check if text ends with any prefix of these patterns
+        for pattern in patterns:
+            for i in range(1, len(pattern)):
+                prefix = pattern[:i]
+                if text.endswith(prefix):
+                    return prefix
+
+        return None
+
     def _reset_streaming_state(self):
         """Reset all streaming state."""
         self.current_tool_index = 0
@@ -359,10 +385,17 @@ class DeepSeekV32ToolParser(ToolParser):
                     # We just ended a tool call, skip whitespace
                     return None
                 # Normal content, no tool call
-                if delta_text.endswith("<"):
-                    return DeltaMessage(content=delta_text[:-1])
-                if previous_text and previous_text.endswith("<"):
-                    return DeltaMessage(content="<" + delta_text)
+                # Check if current_text ends with a partial tool call start tag
+                # to avoid leaking partial tags as content
+                partial_tag = self._get_partial_tool_start(current_text)
+                if partial_tag:
+                    # Don't emit the partial tag as content yet
+                    if len(delta_text) <= len(partial_tag):
+                        # Entire delta is part of partial tag, emit nothing
+                        return None
+                    else:
+                        # Emit content before the partial tag
+                        return DeltaMessage(content=delta_text[: -len(partial_tag)])
                 return DeltaMessage(content=delta_text)
 
         # Check if we're between tool calls (waiting for next one)
