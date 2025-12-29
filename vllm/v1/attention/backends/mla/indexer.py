@@ -177,15 +177,32 @@ def kv_spans_from_batches(
 
 def get_max_prefill_buffer_size(vllm_config: VllmConfig):
     max_model_len = vllm_config.model_config.max_model_len
-    # NOTE(Chen): 40 is a magic number for controlling the prefill buffer size.
-    # Each entry is 128 fp8 bytes and 4 scale bytes for a total of 132 bytes.
-    # The flashmla_sparse backend uses a workspace size of 5 * max_model_len.
-    # The memory usage of the workspace there is 576 * 2 bytes; so we size this as
-    # (576 * 2 // 132) * 5 = 40 to maximize this workspace size while still fitting
-    # within the flashmla_sparse workspace.
-    # For DeepSeek-V3.2, the max_model_len is 163840.
-    #   40 * 163840 * 132 = 865075200 bytes = 825 MB
-    return max_model_len * 40
+    # This controls max tokens per prefill chunk.
+    #
+    # Original logic used a multiplier of 40 based on workspace buffer sizing
+    # (40 * max_model_len * 132 bytes = ~825 MB for k_fp8 + scale buffers).
+    #
+    # However, the critical memory constraint is actually the logits tensor
+    # output from fp8_mqa_logits, which is:
+    #   logits = [num_query_tokens, chunk_total_seq_lens] × 4 bytes (float32)
+    #
+    # With the original 40x multiplier and max_model_len=163840, chunks could
+    # have up to 6.5M tokens. With large concurrent batches (e.g., 40 requests
+    # × 32k tokens = 1.3M total), logits tensors easily exceed available memory.
+    #
+    # VLLM_MLA_INDEXER_MAX_CHUNK_TOKENS directly caps chunk_total_seq_lens.
+    # Recommended: 131072 (128k) limits logits to ~500MB for 1000 query tokens.
+    import os
+
+    # Hard cap on chunk size (in tokens) to limit logits memory
+    max_chunk_tokens = int(os.environ.get("VLLM_MLA_INDEXER_MAX_CHUNK_TOKENS", "0"))
+
+    if max_chunk_tokens > 0:
+        return max_chunk_tokens
+
+    # Original multiplier-based calculation (can cause OOM with high concurrency)
+    multiplier = int(os.environ.get("VLLM_MLA_INDEXER_WORKSPACE_MULTIPLIER", "40"))
+    return max_model_len * multiplier
 
 
 class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):

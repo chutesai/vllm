@@ -358,13 +358,18 @@ def triton_convert_req_index_to_global_index(
 
 
 def get_prefill_workspace_size(max_model_len: int):
-    # NOTE(Lucas): 5 is a magic number for controlling the prefill buffer size.
-    # May be tuned later.
-    # Memory usage: 5 * max_model_len * 576 * 2 bytes
-    #   Example: DeepSeek-V3.2 with max_model_len=163840 ->
-    #            5 * 163840 * 576 * 2 = ~900 MB
-    # This fits nicely below the typical MoE workspace size of >2GB so this is "free"
-    return max_model_len * 5
+    # This multiplier controls the prefill workspace buffer size.
+    # Memory usage: multiplier * max_model_len * 576 * 2 bytes
+    #
+    # Original default was 5, giving ~900 MB for DeepSeek-V3.2 (max_model_len=163840).
+    # This can be reduced to save memory at the cost of more chunking.
+    #
+    # VLLM_MLA_PREFILL_WORKSPACE_MULTIPLIER allows tuning this trade-off.
+    # Example: multiplier=1 reduces workspace to ~180 MB.
+    import os
+
+    multiplier = int(os.environ.get("VLLM_MLA_PREFILL_WORKSPACE_MULTIPLIER", "5"))
+    return max_model_len * multiplier
 
 
 class FlashMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashMLASparseMetadata]):
