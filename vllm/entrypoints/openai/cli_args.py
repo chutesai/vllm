@@ -185,7 +185,7 @@ class FrontendArgs:
     log. The default of None means unlimited."""
     disable_fastapi_docs: bool = False
     """Disable FastAPI's OpenAPI schema, Swagger UI, and ReDoc endpoint."""
-    enable_prompt_tokens_details: bool = False
+    enable_prompt_tokens_details: bool = True
     """If set to True, enable prompt_tokens_details in usage."""
     enable_return_hidden_states: bool = False
     """If set to True, return hidden states from the model."""

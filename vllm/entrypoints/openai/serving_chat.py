@@ -1355,7 +1355,7 @@ class OpenAIServingChat(OpenAIServing):
                     total_tokens=num_prompt_tokens + completion_tokens,
                     reasoning_tokens=sum(previous_num_reasoning_tokens),
                 )
-                if self.enable_prompt_tokens_details and num_cached_tokens:
+                if self.enable_prompt_tokens_details and num_cached_tokens is not None:
                     final_usage.prompt_tokens_details = PromptTokenUsageInfo(
                         cached_tokens=num_cached_tokens
                     )
@@ -1732,7 +1732,10 @@ class OpenAIServingChat(OpenAIServing):
             total_tokens=num_prompt_tokens + num_generated_tokens,
             reasoning_tokens=num_reasoning_tokens,
         )
-        if self.enable_prompt_tokens_details and final_res.num_cached_tokens:
+        if (
+            self.enable_prompt_tokens_details
+            and final_res.num_cached_tokens is not None
+        ):
             usage.prompt_tokens_details = PromptTokenUsageInfo(
                 cached_tokens=final_res.num_cached_tokens
             )
