@@ -83,7 +83,8 @@ class DeepSeekV32ToolParser(ToolParser):
         self._reset_streaming_state()
 
         # Flexible regex patterns for complete parsing and streaming
-        # Optional DSML marker: matches both "<function_calls>" and "<｜DSML｜function_calls>"
+        # Optional DSML marker: matches both "<function_calls>"
+        #   and "<｜DSML｜function_calls>"
         # Case-insensitive, handles whitespace variations
         _dsml = r"(?:｜\s*DSML\s*｜)?"  # Optional DSML marker
         _tail = r"(?:｜)?\s*>"  # Optional trailing ｜ before >
@@ -362,7 +363,8 @@ class DeepSeekV32ToolParser(ToolParser):
         # Handle normal content before tool calls
         if not self.is_tool_call_started:
             # Check if tool call is starting - require FULL start tag (with closing >)
-            # to avoid false positives on literal text like "<function_calls>" in explanations
+            # to avoid false positives on literal text like "<function_calls>"
+            # in explanations
             start_match = self.tool_call_start_regex.search(current_text)
             if start_match:
                 self.is_tool_call_started = True
