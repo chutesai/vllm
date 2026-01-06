@@ -83,6 +83,7 @@ from vllm.entrypoints.serve.elastic_ep.middleware import (
 from vllm.entrypoints.serve.tokenize.serving import OpenAIServingTokenization
 from vllm.entrypoints.tool_server import DemoToolServer, MCPToolServer, ToolServer
 from vllm.entrypoints.utils import (
+    abort_on_disconnect,
     cli_env_setup,
     load_aware_call,
     log_non_default_args,
@@ -359,8 +360,16 @@ async def create_responses(request: ResponsesRequest, raw_request: Request):
     elif isinstance(generator, ResponsesResponse):
         return JSONResponse(content=generator.model_dump())
 
+    # Wrap streaming generator with disconnect detection to abort on client disconnect
+    # Note: request.request_id is used directly as it's the external request ID
     return StreamingResponse(
-        content=_convert_stream_to_sse_events(generator), media_type="text/event-stream"
+        content=abort_on_disconnect(
+            raw_request,
+            _convert_stream_to_sse_events(generator),
+            engine_client(raw_request),
+            request.request_id,
+        ),
+        media_type="text/event-stream",
     )
 
 
@@ -474,7 +483,14 @@ async def create_messages(request: AnthropicMessagesRequest, raw_request: Reques
         logger.debug("Anthropic Messages Response: %s", resp)
         return JSONResponse(content=resp)
 
-    return StreamingResponse(content=generator, media_type="text/event-stream")
+    # Wrap streaming generator with disconnect detection to abort on client disconnect
+    request_id = raw_request.state.request_metadata.request_id
+    return StreamingResponse(
+        content=abort_on_disconnect(
+            raw_request, generator, engine_client(raw_request), request_id
+        ),
+        media_type="text/event-stream",
+    )
 
 
 @router.post(
@@ -515,7 +531,14 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
             headers=metrics_header(metrics_header_format),
         )
 
-    return StreamingResponse(content=generator, media_type="text/event-stream")
+    # Wrap streaming generator with disconnect detection to abort on client disconnect
+    request_id = raw_request.state.request_metadata.request_id
+    return StreamingResponse(
+        content=abort_on_disconnect(
+            raw_request, generator, engine_client(raw_request), request_id
+        ),
+        media_type="text/event-stream",
+    )
 
 
 @router.post(
@@ -561,7 +584,14 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
             headers=metrics_header(metrics_header_format),
         )
 
-    return StreamingResponse(content=generator, media_type="text/event-stream")
+    # Wrap streaming generator with disconnect detection to abort on client disconnect
+    request_id = raw_request.state.request_metadata.request_id
+    return StreamingResponse(
+        content=abort_on_disconnect(
+            raw_request, generator, engine_client(raw_request), request_id
+        ),
+        media_type="text/event-stream",
+    )
 
 
 @router.post(
@@ -600,7 +630,14 @@ async def create_transcriptions(
     elif isinstance(generator, TranscriptionResponseVariant):
         return JSONResponse(content=generator.model_dump())
 
-    return StreamingResponse(content=generator, media_type="text/event-stream")
+    # Wrap streaming generator with disconnect detection to abort on client disconnect
+    request_id = raw_request.state.request_metadata.request_id
+    return StreamingResponse(
+        content=abort_on_disconnect(
+            raw_request, generator, engine_client(raw_request), request_id
+        ),
+        media_type="text/event-stream",
+    )
 
 
 @router.post(
@@ -639,7 +676,14 @@ async def create_translations(
     elif isinstance(generator, TranslationResponseVariant):
         return JSONResponse(content=generator.model_dump())
 
-    return StreamingResponse(content=generator, media_type="text/event-stream")
+    # Wrap streaming generator with disconnect detection to abort on client disconnect
+    request_id = raw_request.state.request_metadata.request_id
+    return StreamingResponse(
+        content=abort_on_disconnect(
+            raw_request, generator, engine_client(raw_request), request_id
+        ),
+        media_type="text/event-stream",
+    )
 
 
 def load_log_config(log_config_file: str | None) -> dict | None:

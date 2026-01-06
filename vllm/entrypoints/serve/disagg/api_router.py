@@ -23,6 +23,7 @@ from vllm.entrypoints.serve.disagg.serving import (
 )
 from vllm.entrypoints.serve.tokenize.serving import OpenAIServingTokenization
 from vllm.entrypoints.utils import (
+    abort_on_disconnect,
     load_aware_call,
     with_cancellation,
 )
@@ -78,7 +79,14 @@ async def generate(request: GenerateRequest, raw_request: Request):
     elif isinstance(generator, GenerateResponse):
         return JSONResponse(content=generator.model_dump())
 
-    return StreamingResponse(content=generator, media_type="text/event-stream")
+    # Wrap streaming generator with disconnect detection to abort on client disconnect
+    request_id = raw_request.state.request_metadata.request_id
+    return StreamingResponse(
+        content=abort_on_disconnect(
+            raw_request, generator, engine_client(raw_request), request_id
+        ),
+        media_type="text/event-stream",
+    )
 
 
 def attach_router(app: FastAPI):

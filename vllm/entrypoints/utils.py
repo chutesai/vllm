@@ -5,7 +5,9 @@ import asyncio
 import dataclasses
 import functools
 import os
+import time
 from argparse import Namespace
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +103,47 @@ def with_cancellation(handler_func):
         return None
 
     return wrapper
+
+
+async def abort_on_disconnect(
+    raw_request: Request,
+    generator: AsyncGenerator[str, None],
+    engine_client: EngineClient,
+    request_id: str,
+    check_interval: float = 0.1,
+) -> AsyncGenerator[str, None]:
+    """Wraps a streaming generator to abort the request on client disconnect.
+
+    This function periodically checks if the client has disconnected during
+    streaming. If a disconnect is detected, it aborts the request in the
+    engine to free up resources immediately rather than letting the request
+    continue processing until completion.
+
+    Args:
+        raw_request: The FastAPI request object used to check disconnect status.
+        generator: The async generator producing streaming response chunks.
+        engine_client: The engine client used to abort the request.
+        request_id: The unique identifier of the request to abort.
+        check_interval: How often (in seconds) to check for disconnection.
+    """
+    last_check = time.monotonic()
+    try:
+        async for chunk in generator:
+            yield chunk
+
+            # Periodic disconnect check to avoid checking on every chunk
+            now = time.monotonic()
+            if now - last_check >= check_interval:
+                last_check = now
+                if await raw_request.is_disconnected():
+                    logger.info("Client disconnected, aborting request %s", request_id)
+                    await engine_client.abort(request_id)
+                    return
+    except asyncio.CancelledError:
+        # Generator was cancelled (e.g., by Starlette on disconnect)
+        logger.info("Request %s cancelled, aborting", request_id)
+        await engine_client.abort(request_id)
+        raise
 
 
 def decrement_server_load(request: Request):
