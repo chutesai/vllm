@@ -14,6 +14,7 @@ import regex as re
 from cllmv import generate as get_chutes_verification_value
 from fastapi import Request
 from openai_harmony import Message as OpenAIMessage
+from partial_json_parser.core.options import Allow
 
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.chat_utils import (
@@ -77,6 +78,7 @@ from vllm.tokenizers.mistral import (
 )
 from vllm.tool_parsers import ToolParser
 from vllm.tool_parsers.mistral_tool_parser import MistralToolCall
+from vllm.tool_parsers.utils import partial_json_loads
 from vllm.utils.collection_utils import as_list
 from vllm.v1.sample.logits_processor import validate_logits_processors_parameters
 
@@ -102,6 +104,7 @@ class OpenAIServingChat(OpenAIServing):
         enable_prompt_tokens_details: bool = False,
         enable_force_include_usage: bool = False,
         enable_log_outputs: bool = False,
+        exclude_log_deltas: bool = False,
         log_error_stack: bool = False,
         max_completion_tokens: int | None = None,
         max_stream_completion_tokens: int | None = None,
@@ -136,6 +139,8 @@ class OpenAIServingChat(OpenAIServing):
             and self.max_completion_tokens is not None
         ):
             self.max_stream_completion_tokens = self.max_completion_tokens
+
+        self.exclude_log_deltas = exclude_log_deltas
 
         # set up logits processors
         self.logits_processors = self.model_config.logits_processors
@@ -535,8 +540,12 @@ class OpenAIServingChat(OpenAIServing):
             # if the current text is empty, we cannot parse it
             return None, function_name_returned
         try:
-            obj = partial_json_parser.loads(current_text)
-        except partial_json_parser.core.exceptions.MalformedJSON:
+            flags = Allow.ALL
+            obj, _ = partial_json_loads(current_text, flags)
+        except (
+            partial_json_parser.core.exceptions.MalformedJSON,
+            json.JSONDecodeError,
+        ):
             logger.debug("not enough tokens to parse into JSON yet")
             obj = None
 
@@ -1187,7 +1196,7 @@ class OpenAIServingChat(OpenAIServing):
                                 if tc.function and tc.function.arguments
                             )
 
-                        if delta_content:
+                        if delta_content and not self.exclude_log_deltas:
                             self.request_logger.log_outputs(
                                 request_id=request_id,
                                 outputs=delta_content,

@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
+import regex as re
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask, BackgroundTasks
@@ -361,3 +362,8 @@ async def process_chat_template(
                     model_config.model,
                 )
     return resolved_chat_template
+
+
+def sanitize_message(message: str) -> str:
+    # Avoid leaking memory address from object reprs
+    return re.sub(r" at 0x[0-9a-f]+>", ">", message)
