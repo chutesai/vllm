@@ -777,8 +777,12 @@ class OpenAIServingChat(OpenAIServing):
                                 else None
                             ),
                         )
+                        verification_text = (
+                            choice_data.delta.content
+                            or choice_data.delta.reasoning_content
+                        )
                         chunk.chutes_verification = get_chutes_verification_value(
-                            chunk.id, chunk.created, None
+                            chunk.id, chunk.created, verification_text
                         )
 
                         # if continuous usage stats are requested, add it
@@ -818,9 +822,13 @@ class OpenAIServingChat(OpenAIServing):
                                     choices=[choice_data],
                                     model=model_name,
                                 )
+                                verification_text = (
+                                    choice_data.delta.content
+                                    or choice_data.delta.reasoning_content
+                                )
                                 chunk.chutes_verification = (
                                     get_chutes_verification_value(
-                                        chunk.id, chunk.created, last_msg_content
+                                        chunk.id, chunk.created, verification_text
                                     )
                                 )
                                 if include_continuous_usage:
@@ -1337,8 +1345,11 @@ class OpenAIServingChat(OpenAIServing):
                         choices=[choice_data],
                         model=model_name,
                     )
+                    verification_text = (
+                        choice_data.delta.content or choice_data.delta.reasoning_content
+                    )
                     chunk.chutes_verification = get_chutes_verification_value(
-                        chunk.id, chunk.created, choice_data.delta.content
+                        chunk.id, chunk.created, verification_text
                     )
 
                     # handle usage stats if requested & if continuous
@@ -1765,8 +1776,11 @@ class OpenAIServingChat(OpenAIServing):
         )
 
         if choices:
+            verification_text = (
+                choices[0].message.content or choices[0].message.reasoning_content
+            )
             response.chutes_verification = get_chutes_verification_value(
-                response.id, response.created, choices[0].message.content
+                response.id, response.created, verification_text
             )
 
         # Log complete response if output logging is enabled
