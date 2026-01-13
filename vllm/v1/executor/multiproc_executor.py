@@ -231,10 +231,6 @@ class MultiprocExecutor(Executor):
             logger.error(
                 "Worker proc %s died unexpectedly, shutting down executor.", proc_name
             )
-            # Set shutdown_event immediately to unblock any pending RPCs
-            # that are waiting on mq.dequeue() with this event as cancel signal.
-            # This must happen before shutdown() to avoid blocking on dead workers.
-            _self.shutdown_event.set()
             _self.shutdown()
             callback = _self.failure_callback
             if callback is not None:
@@ -342,14 +338,6 @@ class MultiprocExecutor(Executor):
                     )
                 except TimeoutError as e:
                     raise TimeoutError(f"RPC call to {method} timed out.") from e
-                except RuntimeError as e:
-                    if "cancelled" in str(e):
-                        raise RuntimeError(
-                            "Worker process died unexpectedly during RPC call "
-                            f"to {method}. This may indicate an OOM error or "
-                            "other fatal issue in a worker process."
-                        ) from e
-                    raise
                 if status != WorkerProc.ResponseStatus.SUCCESS:
                     raise RuntimeError(
                         f"Worker failed with error '{result}', please check the"
