@@ -338,6 +338,14 @@ class MultiprocExecutor(Executor):
                     )
                 except TimeoutError as e:
                     raise TimeoutError(f"RPC call to {method} timed out.") from e
+                except RuntimeError as e:
+                    if "cancelled" in str(e):
+                        raise RuntimeError(
+                            "Worker process died unexpectedly during RPC call "
+                            f"to {method}. This may indicate an OOM error or "
+                            "other fatal issue during model initialization."
+                        ) from e
+                    raise
                 if status != WorkerProc.ResponseStatus.SUCCESS:
                     raise RuntimeError(
                         f"Worker failed with error '{result}', please check the"
@@ -391,7 +399,13 @@ class MultiprocExecutor(Executor):
         if not getattr(self, "shutting_down", False):
             self.shutting_down = True
 
-            # Make sure all the worker processes are terminated first.
+            # Set shutdown_event first to unblock any pending RPCs immediately.
+            # This is critical when a worker dies unexpectedly (e.g. OOM during
+            # CUDA graph capture) - we need to unblock collective_rpc() which
+            # may be waiting on mq.dequeue() with this event as the cancel signal.
+            self.shutdown_event.set()
+
+            # Make sure all the worker processes are terminated.
             if workers := getattr(self, "workers", None):
                 for w in workers:
                     # Close death_writer to signal child processes to exit
@@ -400,8 +414,6 @@ class MultiprocExecutor(Executor):
                         w.death_writer = None
                     w.worker_response_mq = None
                 self._ensure_worker_termination([w.proc for w in workers])
-
-            self.shutdown_event.set()
 
         self.rpc_broadcast_mq = None
 
