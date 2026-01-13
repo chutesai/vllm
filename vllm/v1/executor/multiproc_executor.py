@@ -231,6 +231,10 @@ class MultiprocExecutor(Executor):
             logger.error(
                 "Worker proc %s died unexpectedly, shutting down executor.", proc_name
             )
+            # Set shutdown_event immediately to unblock any pending RPCs
+            # that are waiting on mq.dequeue() with this event as cancel signal.
+            # This must happen before shutdown() to avoid blocking on dead workers.
+            _self.shutdown_event.set()
             _self.shutdown()
             callback = _self.failure_callback
             if callback is not None:
@@ -343,7 +347,7 @@ class MultiprocExecutor(Executor):
                         raise RuntimeError(
                             "Worker process died unexpectedly during RPC call "
                             f"to {method}. This may indicate an OOM error or "
-                            "other fatal issue during model initialization."
+                            "other fatal issue in a worker process."
                         ) from e
                     raise
                 if status != WorkerProc.ResponseStatus.SUCCESS:
@@ -399,13 +403,7 @@ class MultiprocExecutor(Executor):
         if not getattr(self, "shutting_down", False):
             self.shutting_down = True
 
-            # Set shutdown_event first to unblock any pending RPCs immediately.
-            # This is critical when a worker dies unexpectedly (e.g. OOM during
-            # CUDA graph capture) - we need to unblock collective_rpc() which
-            # may be waiting on mq.dequeue() with this event as the cancel signal.
-            self.shutdown_event.set()
-
-            # Make sure all the worker processes are terminated.
+            # Make sure all the worker processes are terminated first.
             if workers := getattr(self, "workers", None):
                 for w in workers:
                     # Close death_writer to signal child processes to exit
@@ -414,6 +412,8 @@ class MultiprocExecutor(Executor):
                         w.death_writer = None
                     w.worker_response_mq = None
                 self._ensure_worker_termination([w.proc for w in workers])
+
+            self.shutdown_event.set()
 
         self.rpc_broadcast_mq = None
 

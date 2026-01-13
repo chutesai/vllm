@@ -4934,6 +4934,12 @@ class GPUModelRunner(
                 activate_lora=activate_lora,
                 is_graph_capturing=True,
             )
+            # Synchronize and clear cache after each graph capture to ensure
+            # memory is fully released before next capture. This is especially
+            # important in TEE environments where encrypted memory deallocation
+            # may be slower.
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
         self.maybe_remove_all_loras(self.lora_config)
 
     def initialize_attn_backend(self, kv_cache_config: KVCacheConfig) -> None:
