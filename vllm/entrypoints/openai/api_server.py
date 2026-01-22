@@ -60,7 +60,6 @@ from vllm.entrypoints.serve.elastic_ep.middleware import (
 )
 from vllm.entrypoints.serve.tokenize.serving import OpenAIServingTokenization
 from vllm.entrypoints.utils import (
-    abort_on_disconnect,
     cli_env_setup,
     log_non_default_args,
     process_chat_template,

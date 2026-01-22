@@ -11,11 +11,11 @@ from typing import Any, Final
 import jinja2
 import partial_json_parser
 import regex as re
-from cllmv import generate as get_chutes_verification_value
 from fastapi import Request
 from openai_harmony import Message as OpenAIMessage
 from partial_json_parser.core.options import Allow
 
+from cllmv import generate as get_chutes_verification_value
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.chat_utils import (
     ChatTemplateContentFormatOption,
