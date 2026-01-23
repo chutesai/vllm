@@ -204,8 +204,7 @@ class OpenAIServingChat(OpenAIServing):
         start_time = time.perf_counter()
 
         try:
-            # Get the tokenizer from the engine
-            tokenizer = await self.engine_client.get_tokenizer()
+            renderer = self.engine_client.renderer
 
             # Create a minimal dummy request
             dummy_request = ChatCompletionRequest(
@@ -221,7 +220,7 @@ class OpenAIServingChat(OpenAIServing):
             # 3. Tokenizer initialization for chat
             await self._preprocess_chat(
                 dummy_request,
-                tokenizer,
+                renderer,
                 dummy_request.messages,
                 chat_template=self.chat_template,
                 chat_template_content_format=self.chat_template_content_format,
@@ -265,7 +264,8 @@ class OpenAIServingChat(OpenAIServing):
             raise self.engine_client.dead_error
 
         try:
-            tokenizer = await self.engine_client.get_tokenizer()
+            renderer = self.engine_client.renderer
+            tokenizer = renderer.tokenizer
 
             tool_parser = self.tool_parser
 
@@ -326,7 +326,7 @@ class OpenAIServingChat(OpenAIServing):
 
                 conversation, engine_prompts = await self._preprocess_chat(
                     request,
-                    tokenizer,
+                    renderer,
                     request.messages,
                     chat_template=request.chat_template or self.chat_template,
                     chat_template_content_format=self.chat_template_content_format,
@@ -383,8 +383,6 @@ class OpenAIServingChat(OpenAIServing):
             )
 
             model_name = self.models.model_name(lora_request)
-
-            tokenizer = await self.engine_client.get_tokenizer()
         except (ValueError, TypeError, RuntimeError) as e:
             logger.exception("Error preparing request components")
             return self.create_error_response(e)
@@ -489,6 +487,8 @@ class OpenAIServingChat(OpenAIServing):
         (result_generator,) = generators
 
         # Streaming response
+        tokenizer = self.renderer.tokenizer
+
         if request.stream:
             return self.chat_completion_stream_generator(
                 request,
@@ -1912,7 +1912,7 @@ class OpenAIServingChat(OpenAIServing):
                 else:
                     if tokenizer is None:
                         raise ValueError(
-                            "Tokenizer not available when `skip_tokenizer_init=True`"
+                            "Unable to get tokenizer because `skip_tokenizer_init=True`"
                         )
 
                     token = tokenizer.decode(token_id)

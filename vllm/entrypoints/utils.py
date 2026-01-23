@@ -8,7 +8,8 @@ import os
 import time
 from argparse import Namespace
 from collections.abc import AsyncGenerator
-from pathlib import Path
+from logging import Logger
+from string import Template
 from typing import TYPE_CHECKING, Any
 
 import regex as re
@@ -16,20 +17,14 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask, BackgroundTasks
 
-from vllm.config import ModelConfig
+from vllm import envs
 from vllm.engine.arg_utils import EngineArgs
-from vllm.engine.protocol import EngineClient
-from vllm.entrypoints.chat_utils import (
-    load_chat_template,
-    resolve_hf_chat_template,
-    resolve_mistral_chat_template,
-)
-from vllm.logger import init_logger
+from vllm.logger import current_formatter_type, init_logger
 from vllm.platforms import current_platform
-from vllm.tokenizers.mistral import MistralTokenizer
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 if TYPE_CHECKING:
+    from vllm.engine.protocol import EngineClient
     from vllm.entrypoints.openai.chat_completion.protocol import (
         ChatCompletionRequest,
     )
@@ -43,6 +38,7 @@ if TYPE_CHECKING:
 else:
     ChatCompletionRequest = object
     CompletionRequest = object
+    EngineClient = object
     StreamOptions = object
     LoRAModulePath = object
 
@@ -345,40 +341,31 @@ def process_lora_modules(
     return lora_modules
 
 
-async def process_chat_template(
-    args_chat_template: Path | str | None,
-    engine_client: EngineClient,
-    model_config: ModelConfig,
-) -> str | None:
-    resolved_chat_template = load_chat_template(args_chat_template)
-    if resolved_chat_template is not None:
-        # Get the tokenizer to check official template
-        tokenizer = await engine_client.get_tokenizer()
-
-        if isinstance(tokenizer, MistralTokenizer):
-            # The warning is logged in resolve_mistral_chat_template.
-            resolved_chat_template = resolve_mistral_chat_template(
-                chat_template=resolved_chat_template
-            )
-        else:
-            hf_chat_template = resolve_hf_chat_template(
-                tokenizer=tokenizer,
-                chat_template=None,
-                tools=None,
-                model_config=model_config,
-            )
-
-            if hf_chat_template != resolved_chat_template:
-                logger.warning(
-                    "Using supplied chat template: %s\n"
-                    "It is different from official chat template '%s'. "
-                    "This discrepancy may lead to performance degradation.",
-                    resolved_chat_template,
-                    model_config.model,
-                )
-    return resolved_chat_template
-
-
 def sanitize_message(message: str) -> str:
     # Avoid leaking memory address from object reprs
     return re.sub(r" at 0x[0-9a-f]+>", ">", message)
+
+
+def log_version_and_model(lgr: Logger, version: str, model_name: str) -> None:
+    if envs.VLLM_DISABLE_LOG_LOGO or (formatter := current_formatter_type(lgr)) is None:
+        message = "vLLM server version %s, serving model %s"
+    else:
+        logo_template = Template(
+            "\n       ${w}█     █     █▄   ▄█${r}\n"
+            " ${o}▄▄${r} ${b}▄█${r} ${w}█     █     █ ▀▄▀ █${r}  version ${w}%s${r}\n"
+            "  ${o}█${r}${b}▄█▀${r} ${w}█     █     █     █${r}  model   ${w}%s${r}\n"
+            "   ${b}▀▀${r}  ${w}▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀${r}\n"
+        )
+        colors = {
+            "w": "\033[97;1m",  # white
+            "o": "\033[93m",  # orange
+            "b": "\033[94m",  # blue
+            "r": "\033[0m",  # reset
+        }
+        if formatter != "color":
+            # monochrome logo (no ansi escape codes)
+            colors = dict.fromkeys(colors, "")
+
+        message = logo_template.substitute(colors)
+
+    lgr.info(message, version, model_name)

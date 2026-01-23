@@ -359,7 +359,7 @@ class StructuredOutputManager:
             # Initial check: only done once when reasoning_ended is None
             if structured_req.reasoning_ended is None:
                 structured_req.reasoning_ended = self.reasoner.is_reasoning_end(
-                    request.prompt_token_ids
+                    request.prompt_token_ids or []
                 )
                 if structured_req.reasoning_ended:
                     return True
@@ -407,8 +407,9 @@ class StructuredOutputManager:
 
         # Check if reasoning ends in *this* step
         delta_from = request.num_computed_tokens - request.num_output_placeholders
-        delta_ids = list(request.all_token_ids[delta_from:])
-        if self.reasoner.is_reasoning_end_streaming(request.all_token_ids, delta_ids):
+        all_token_ids = request.all_token_ids
+        delta_ids = list(all_token_ids[delta_from:])
+        if self.reasoner.is_reasoning_end_streaming(all_token_ids, delta_ids):
             structured_req.reasoning_ended = True
             # Try to sync grammar with tokens after </think> that were
             # generated in this step. Use validate_tokens to only accept
