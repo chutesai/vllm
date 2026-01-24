@@ -74,17 +74,10 @@ class OpenAIServingCompletion(OpenAIServing):
         self.logits_processors = self.model_config.logits_processors
 
         self.enable_prompt_tokens_details = enable_prompt_tokens_details
-        self.default_sampling_params = self.model_config.get_diff_sampling_param()
         self.enable_force_include_usage = enable_force_include_usage
         self.enable_return_hidden_states = enable_return_hidden_states
-        if self.default_sampling_params:
-            source = self.model_config.generation_config
-            source = "model" if source == "auto" else source
-            logger.info(
-                "Using default completion sampling params from %s: %s",
-                source,
-                self.default_sampling_params,
-            )
+
+        self.default_sampling_params = self.model_config.get_diff_sampling_param()
 
     async def render_completion_request(
         self,
