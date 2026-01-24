@@ -985,7 +985,7 @@ class GPUModelRunner(
                 else:
                     assert self.input_batch.prev_req_id_to_index is not None
                     prev_req_index = self.input_batch.prev_req_id_to_index[req_id]
-                    num_accepted = valid_sampled_token_count[prev_req_index] - 1
+                    num_accepted = max(0, valid_sampled_token_count[prev_req_index] - 1)
                     num_rejected = req_state.prev_num_draft_len - num_accepted
                     num_computed_tokens -= num_rejected
                     req_state.output_token_ids.extend([-1] * num_accepted)
