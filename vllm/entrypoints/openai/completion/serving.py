@@ -8,9 +8,9 @@ from collections.abc import Sequence as GenericSequence
 from typing import cast
 
 import jinja2
+from cllmv import generate as get_chutes_verification_value
 from fastapi import Request
 
-from cllmv import generate as get_chutes_verification_value
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.logger import RequestLogger
 from vllm.entrypoints.openai.completion.protocol import (
