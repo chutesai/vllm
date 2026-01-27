@@ -17,7 +17,7 @@ from vllm.model_executor.layers.fused_moe.moe_permute_unpermute import (
     moe_unpermute,
 )
 from vllm.model_executor.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoDPEP,
+    MoEPrepareAndFinalizeNoEP,
 )
 from vllm.model_executor.layers.fused_moe.topk_weight_and_reduce import (
     TopKWeightAndReduceDelegate,
@@ -1145,7 +1145,7 @@ def cutlass_moe_w4a8_fp8(
     num_experts = global_num_experts if global_num_experts != -1 else w1_q.size(0)
 
     fn = mk.FusedMoEModularKernel(
-        MoEPrepareAndFinalizeNoDPEP(),
+        MoEPrepareAndFinalizeNoEP(),
         CutlassExpertsW4A8Fp8(
             out_dtype=a.dtype,
             a_strides1=a_strides1,

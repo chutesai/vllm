@@ -28,7 +28,7 @@ from vllm.model_executor.layers.fused_moe.moe_align_block_size import (
     moe_align_block_size,
 )
 from vllm.model_executor.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoDPEP,
+    MoEPrepareAndFinalizeNoEP,
 )
 from vllm.model_executor.layers.fused_moe.topk_weight_and_reduce import (
     TopKWeightAndReduceNoOP,
@@ -2307,7 +2307,7 @@ def modular_triton_fused_moe(
     shared_experts: torch.nn.Module | None = None,
 ) -> mk.FusedMoEModularKernel:
     return mk.FusedMoEModularKernel(
-        MoEPrepareAndFinalizeNoDPEP(),
+        MoEPrepareAndFinalizeNoEP(),
         TritonExperts(moe_config, quant_config),
         shared_experts,
     )
