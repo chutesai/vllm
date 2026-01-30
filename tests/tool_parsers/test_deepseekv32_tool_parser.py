@@ -185,10 +185,7 @@ def test_extract_tool_calls_no_tool_call(parser):
 def test_extract_tool_calls_empty_params(parser):
     """Test tool call with no parameters."""
     model_output = (
-        "<function_calls>\n"
-        '<invoke name="get_time">\n'
-        "</invoke>\n"
-        "</function_calls>"
+        '<function_calls>\n<invoke name="get_time">\n</invoke>\n</function_calls>'
     )
     result = parser.extract_tool_calls(model_output, None)
     assert result.tools_called
