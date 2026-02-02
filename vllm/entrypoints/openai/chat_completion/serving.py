@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
@@ -68,8 +69,7 @@ from vllm.entrypoints.openai.parser.harmony_utils import (
 )
 from vllm.entrypoints.openai.utils import maybe_filter_parallel_tool_calls
 from vllm.entrypoints.utils import get_max_tokens, should_include_usage
-from vllm.inputs.data import TokensPrompt
-from vllm.inputs.parse import get_prompt_components
+from vllm.inputs.data import EmbedsPrompt, TokensPrompt
 from vllm.logger import init_logger
 from vllm.logprobs import Logprob
 from vllm.outputs import CompletionOutput, RequestOutput
@@ -203,8 +203,6 @@ class OpenAIServingChat(OpenAIServing):
         start_time = time.perf_counter()
 
         try:
-            renderer = self.engine_client.renderer
-
             # Create a minimal dummy request
             dummy_request = ChatCompletionRequest(
                 messages=[{"role": "user", "content": "warmup"}],
@@ -219,18 +217,10 @@ class OpenAIServingChat(OpenAIServing):
             # 3. Tokenizer initialization for chat
             await self._preprocess_chat(
                 dummy_request,
-                renderer,
                 dummy_request.messages,
-                chat_template=self.chat_template,
-                chat_template_content_format=self.chat_template_content_format,
-                add_generation_prompt=True,
-                continue_final_message=False,
-                tool_dicts=None,
-                documents=None,
-                chat_template_kwargs=None,
-                default_chat_template_kwargs=self.default_chat_template_kwargs,
-                tool_parser=None,
-                add_special_tokens=False,
+                default_template=self.chat_template,
+                default_template_content_format=self.chat_template_content_format,
+                default_template_kwargs=self.default_chat_template_kwargs,
             )
 
             elapsed = (time.perf_counter() - start_time) * 1000
@@ -243,7 +233,10 @@ class OpenAIServingChat(OpenAIServing):
     async def render_chat_request(
         self,
         request: ChatCompletionRequest,
-    ) -> tuple[list[ConversationMessage], list[Any]] | ErrorResponse:
+    ) -> (
+        tuple[list[ConversationMessage], list[TokensPrompt | EmbedsPrompt]]
+        | ErrorResponse
+    ):
         """
         render chat request by validating and preprocessing inputs.
 
@@ -320,23 +313,14 @@ class OpenAIServingChat(OpenAIServing):
                 if error_check_ret is not None:
                     return error_check_ret
 
-                chat_template_kwargs = request.chat_template_kwargs or {}
-                chat_template_kwargs.update(reasoning_effort=request.reasoning_effort)
-
                 conversation, engine_prompts = await self._preprocess_chat(
                     request,
-                    renderer,
                     request.messages,
-                    chat_template=request.chat_template or self.chat_template,
-                    chat_template_content_format=self.chat_template_content_format,
-                    add_generation_prompt=request.add_generation_prompt,
-                    continue_final_message=request.continue_final_message,
+                    default_template=self.chat_template,
+                    default_template_content_format=self.chat_template_content_format,
+                    default_template_kwargs=self.default_chat_template_kwargs,
                     tool_dicts=tool_dicts,
-                    documents=request.documents,
-                    chat_template_kwargs=chat_template_kwargs,
-                    default_chat_template_kwargs=self.default_chat_template_kwargs,
                     tool_parser=tool_parser,
-                    add_special_tokens=request.add_special_tokens,
                 )
             else:
                 # For GPT-OSS.
@@ -393,7 +377,7 @@ class OpenAIServingChat(OpenAIServing):
         generators: list[AsyncGenerator[RequestOutput, None]] = []
         try:
             for i, engine_prompt in enumerate(engine_prompts):
-                prompt_text, _, _ = get_prompt_components(engine_prompt)
+                prompt_text = engine_prompt.get("prompt")
 
                 # If we are creating sub requests for multiple prompts, ensure that they
                 # have unique request ids.
@@ -454,11 +438,15 @@ class OpenAIServingChat(OpenAIServing):
                         trace_headers=trace_headers,
                     )
                 else:
-                    engine_request, tokenization_kwargs = await self._process_inputs(
+                    tok_params = request.build_tok_params(self.model_config)
+                    tokenization_kwargs = tok_params.get_encode_kwargs()
+
+                    engine_request = self.input_processor.process_inputs(
                         sub_request_id,
                         engine_prompt,
                         sampling_params,
                         lora_request=lora_request,
+                        tokenization_kwargs=tokenization_kwargs,
                         trace_headers=trace_headers,
                         priority=request.priority,
                         data_parallel_rank=data_parallel_rank,
@@ -487,6 +475,23 @@ class OpenAIServingChat(OpenAIServing):
         tokenizer = self.renderer.tokenizer
         assert tokenizer is not None
 
+        # Extract template and prompt metadata for checksums
+        # (stored by the renderer in the engine_prompt dict)
+        chat_template_str: str | None = engine_prompts[0].get("_chat_template")  # type: ignore[assignment]
+        templated_prompt: str | None = engine_prompts[0].get("_templated_prompt")  # type: ignore[assignment]
+
+        # Compute SHA256 checksums
+        template_sha256 = (
+            hashlib.sha256(chat_template_str.encode("utf-8")).hexdigest()
+            if chat_template_str
+            else None
+        )
+        prompt_sha256 = (
+            hashlib.sha256(templated_prompt.encode("utf-8")).hexdigest()
+            if templated_prompt
+            else None
+        )
+
         if request.stream:
             return self.chat_completion_stream_generator(
                 request,
@@ -496,6 +501,9 @@ class OpenAIServingChat(OpenAIServing):
                 conversation,
                 tokenizer,
                 request_metadata,
+                template_sha256=template_sha256,
+                prompt_sha256=prompt_sha256,
+                templated_prompt=templated_prompt if request.echo_prompt else None,
             )
 
         try:
@@ -507,6 +515,9 @@ class OpenAIServingChat(OpenAIServing):
                 conversation,
                 tokenizer,
                 request_metadata,
+                template_sha256=template_sha256,
+                prompt_sha256=prompt_sha256,
+                templated_prompt=templated_prompt if request.echo_prompt else None,
             )
         except GenerationError as e:
             return self._convert_generation_error_to_response(e)
@@ -666,6 +677,10 @@ class OpenAIServingChat(OpenAIServing):
         conversation: list[ConversationMessage],
         tokenizer: TokenizerLike,
         request_metadata: RequestResponseMetadata,
+        *,
+        template_sha256: str | None = None,
+        prompt_sha256: str | None = None,
+        templated_prompt: str | None = None,
     ) -> AsyncGenerator[str, None]:
         from vllm.tokenizers.mistral import MistralTokenizer
 
@@ -815,6 +830,15 @@ class OpenAIServingChat(OpenAIServing):
                         chunk.chutes_verification = get_chutes_verification_value(
                             chunk.id, chunk.created, verification_text
                         )
+
+                        # Add template/prompt checksums only to the very first chunk
+                        if i == 0:
+                            if template_sha256:
+                                chunk.template_sha256 = template_sha256
+                            if prompt_sha256:
+                                chunk.prompt_sha256 = prompt_sha256
+                            if templated_prompt:
+                                chunk.templated_prompt = templated_prompt
 
                         # if continuous usage stats are requested, add it
                         if include_continuous_usage:
@@ -1496,6 +1520,10 @@ class OpenAIServingChat(OpenAIServing):
         conversation: list[ConversationMessage],
         tokenizer: TokenizerLike,
         request_metadata: RequestResponseMetadata,
+        *,
+        template_sha256: str | None = None,
+        prompt_sha256: str | None = None,
+        templated_prompt: str | None = None,
     ) -> ErrorResponse | ChatCompletionResponse:
         from vllm.tokenizers.mistral import MistralTokenizer
 
@@ -1903,6 +1931,14 @@ class OpenAIServingChat(OpenAIServing):
             response.chutes_verification = get_chutes_verification_value(
                 response.id, response.created, verification_text
             )
+
+        # Add template/prompt checksums
+        if template_sha256:
+            response.template_sha256 = template_sha256
+        if prompt_sha256:
+            response.prompt_sha256 = prompt_sha256
+        if templated_prompt:
+            response.templated_prompt = templated_prompt
 
         # Log complete response if output logging is enabled
         if self.enable_log_outputs and self.request_logger:

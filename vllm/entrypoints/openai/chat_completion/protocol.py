@@ -13,12 +13,13 @@ from openai.types.chat.chat_completion_audio import (
     ChatCompletionAudio as OpenAIChatCompletionAudio,
 )
 from openai.types.chat.chat_completion_message import Annotation as OpenAIAnnotation
-from pydantic import (
-    Field,
-    model_validator,
-)
+from pydantic import Field, model_validator
 
-from vllm.entrypoints.chat_utils import ChatCompletionMessageParam
+from vllm.config import ModelConfig
+from vllm.entrypoints.chat_utils import (
+    ChatCompletionMessageParam,
+    ChatTemplateContentFormatOption,
+)
 from vllm.entrypoints.openai.engine.protocol import (
     AnyResponseFormat,
     DeltaMessage,
@@ -36,6 +37,7 @@ from vllm.entrypoints.openai.engine.protocol import (
 from vllm.exceptions import VLLMValidationError
 from vllm.logger import init_logger
 from vllm.logprobs import Logprob
+from vllm.renderers import ChatParams, TokenizeParams, merge_kwargs
 from vllm.sampling_params import (
     BeamSearchParams,
     RequestOutputKind,
@@ -121,6 +123,11 @@ class ChatCompletionResponse(OpenAIBaseModel):
     )
     # Chutes verification field
     chutes_verification: str | None = None
+    # Chutes template and prompt checksums
+    template_sha256: str | None = None
+    prompt_sha256: str | None = None
+    # Echo back the templated prompt
+    templated_prompt: str | None = None
 
 
 class ChatCompletionResponseStreamChoice(OpenAIBaseModel):
@@ -146,6 +153,11 @@ class ChatCompletionStreamResponse(OpenAIBaseModel):
     prompt_token_ids: list[int] | None = None
     # Chutes verification field
     chutes_verification: str | None = None
+    # Chutes template and prompt checksums (only in first chunk)
+    template_sha256: str | None = None
+    prompt_sha256: str | None = None
+    # Echo back the templated prompt (only in first chunk)
+    templated_prompt: str | None = None
 
 
 class ChatCompletionToolsParam(OpenAIBaseModel):
@@ -368,8 +380,52 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "This requires --enable-return-hidden-states on the server."
         ),
     )
+    echo_prompt: bool = Field(
+        default=False,
+        description=(
+            "If true, the response will include the templated prompt string "
+            "that was sent to the model."
+        ),
+    )
 
     # --8<-- [end:chat-completion-extra-params]
+
+    def build_chat_params(
+        self,
+        default_template: str | None,
+        default_template_content_format: ChatTemplateContentFormatOption,
+    ) -> ChatParams:
+        return ChatParams(
+            chat_template=self.chat_template or default_template,
+            chat_template_content_format=default_template_content_format,
+            chat_template_kwargs=merge_kwargs(
+                self.chat_template_kwargs,
+                dict(
+                    add_generation_prompt=self.add_generation_prompt,
+                    continue_final_message=self.continue_final_message,
+                    documents=self.documents,
+                    reasoning_effort=self.reasoning_effort,
+                ),
+            ),
+        )
+
+    def build_tok_params(self, model_config: ModelConfig) -> TokenizeParams:
+        if self.max_completion_tokens is not None:
+            max_output_tokens: int | None = self.max_completion_tokens
+            max_output_tokens_param = "max_completion_tokens"
+        else:
+            max_output_tokens = self.max_tokens
+            max_output_tokens_param = "max_tokens"
+
+        return TokenizeParams(
+            max_total_tokens=model_config.max_model_len,
+            max_output_tokens=max_output_tokens or 0,
+            truncate_prompt_tokens=self.truncate_prompt_tokens,
+            add_special_tokens=self.add_special_tokens,
+            needs_detokenization=bool(self.echo and not self.return_token_ids),
+            max_total_tokens_param="max_model_len",
+            max_output_tokens_param=max_output_tokens_param,
+        )
 
     # Default sampling parameters for chat completion requests
     _DEFAULT_SAMPLING_PARAMS: dict = {
