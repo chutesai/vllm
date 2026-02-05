@@ -344,7 +344,6 @@ class StructuredOutputManager:
         # NOTE (Hanchen) if enable_in_reasoning is True, it means that
         # the model needs to be constrained in reasoning. So we should always
         # enable the bitmask filling.
-
         if self.reasoner is not None:
             if self.enable_in_reasoning:
                 return True
@@ -354,6 +353,10 @@ class StructuredOutputManager:
             if structured_req.reasoning_ended:
                 return True
             # Initial check: only done once when reasoning_ended is None
+            # This should be removed here, but since `openai_gptoss`
+            # is an independent code path, it is kept for now.
+            # After unifying the `openai_gptoss` and non-`openai_gptoss` styles,
+            # it can be removed.
             if structured_req.reasoning_ended is None:
                 structured_req.reasoning_ended = self.reasoner.is_reasoning_end(
                     request.prompt_token_ids or []
