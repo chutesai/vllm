@@ -3803,7 +3803,6 @@ class GPUModelRunner(
                 sampled_token_ids=valid_sampled_token_ids,
                 logprobs=logprobs_lists,
                 prompt_logprobs_dict=prompt_logprobs_dict,
-                pooler_output=[],
                 hidden_states_dict=hidden_states_dict,
                 kv_connector_output=kv_connector_output,
                 ec_connector_output=ec_connector_output
