@@ -19,8 +19,6 @@ from starlette.background import BackgroundTask, BackgroundTasks
 
 from vllm import envs
 from vllm.engine.arg_utils import EngineArgs
-from vllm.inputs import EmbedsPrompt, TokensPrompt
-from vllm.inputs.parse import get_prompt_len
 from vllm.logger import current_formatter_type, init_logger
 from vllm.platforms import current_platform
 from vllm.utils.argparse_utils import FlexibleArgumentParser
@@ -37,14 +35,12 @@ if TYPE_CHECKING:
         StreamOptions,
     )
     from vllm.entrypoints.openai.models.protocol import LoRAModulePath
-    from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
 else:
     ChatCompletionRequest = object
     CompletionRequest = object
     EngineClient = object
     StreamOptions = object
     LoRAModulePath = object
-    ResponsesRequest = object
 
 
 logger = init_logger(__name__)
@@ -233,23 +229,10 @@ def cli_env_setup():
 
 def get_max_tokens(
     max_model_len: int,
-    request: "CompletionRequest | ChatCompletionRequest | ResponsesRequest",
-    prompt: TokensPrompt | EmbedsPrompt,
+    max_tokens: int | None,
+    input_length: int,
     default_sampling_params: dict,
 ) -> int:
-    # NOTE: Avoid isinstance() for better efficiency
-    max_tokens: int | None = None
-    if max_tokens is None:
-        # ChatCompletionRequest
-        max_tokens = getattr(request, "max_completion_tokens", None)
-    if max_tokens is None:
-        # ResponsesRequest
-        max_tokens = getattr(request, "max_output_tokens", None)
-    if max_tokens is None:
-        # CompletionRequest (also a fallback for ChatCompletionRequest)
-        max_tokens = getattr(request, "max_tokens", None)
-
-    input_length = get_prompt_len(prompt)
     default_max_tokens = max_model_len - input_length
     max_output_tokens = current_platform.get_max_output_tokens(input_length)
 
