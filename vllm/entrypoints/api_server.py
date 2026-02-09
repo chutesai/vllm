@@ -144,6 +144,7 @@ async def run_server(
         timeout_keep_alive=envs.VLLM_HTTP_TIMEOUT_KEEP_ALIVE,
         ssl_keyfile=args.ssl_keyfile,
         ssl_certfile=args.ssl_certfile,
+        ssl_keyfile_password=args.ssl_keyfile_password,
         ssl_ca_certs=args.ssl_ca_certs,
         ssl_cert_reqs=args.ssl_cert_reqs,
         **uvicorn_kwargs,
@@ -158,6 +159,12 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=parser.check_port, default=8000)
     parser.add_argument("--ssl-keyfile", type=str, default=None)
     parser.add_argument("--ssl-certfile", type=str, default=None)
+    parser.add_argument(
+        "--ssl-keyfile-password",
+        type=str,
+        default=None,
+        help="Password for the SSL key file, if encrypted",
+    )
     parser.add_argument(
         "--ssl-ca-certs", type=str, default=None, help="The CA certificates file"
     )

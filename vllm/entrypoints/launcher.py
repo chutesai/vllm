@@ -2,8 +2,12 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import asyncio
+import contextlib
+import os
 import signal
 import socket
+import stat
+import tempfile
 from http import HTTPStatus
 from typing import Any
 
@@ -22,6 +26,42 @@ from vllm.utils.network_utils import find_process_using_port
 from vllm.v1.engine.exceptions import EngineDeadError, EngineGenerateError
 
 logger = init_logger(__name__)
+
+_SSL_PEM_ENV_VARS = {
+    "VLLM_SSL_KEYFILE_PEM": "ssl_keyfile",
+    "VLLM_SSL_CERTFILE_PEM": "ssl_certfile",
+    "VLLM_SSL_CA_CERTS_PEM": "ssl_ca_certs",
+}
+
+
+def _materialize_ssl_pem_env_vars(uvicorn_kwargs: dict[str, Any]) -> list[str]:
+    """Write PEM content from env vars to secure tempfiles."""
+    tmpfiles: list[str] = []
+    tmpdir = "/dev/shm" if os.path.isdir("/dev/shm") else None
+
+    for env_var, kwarg in _SSL_PEM_ENV_VARS.items():
+        content = os.environ.get(env_var)
+        if content and not uvicorn_kwargs.get(kwarg):
+            fd, path = tempfile.mkstemp(dir=tmpdir, prefix="vllm_ssl_", suffix=".pem")
+            try:
+                os.fchmod(fd, stat.S_IRUSR)
+                os.write(fd, content.encode())
+            finally:
+                os.close(fd)
+            uvicorn_kwargs[kwarg] = path
+            tmpfiles.append(path)
+
+    password = os.environ.get("VLLM_SSL_KEYFILE_PASSWORD")
+    if password and not uvicorn_kwargs.get("ssl_keyfile_password"):
+        uvicorn_kwargs["ssl_keyfile_password"] = password
+
+    return tmpfiles
+
+
+def _cleanup_ssl_tempfiles(tmpfiles: list[str]) -> None:
+    for path in tmpfiles:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
 
 
 async def serve_http(
@@ -56,6 +96,9 @@ async def serve_http(
             continue
 
         logger.info("Route: %s, Endpoint: %s", path, endpoint.__name__)
+
+    # Materialize any PEM content from env vars into secure tempfiles.
+    ssl_tmpfiles = _materialize_ssl_pem_env_vars(uvicorn_kwargs)
 
     # Extract header limit options if present
     h11_max_incomplete_event_size = uvicorn_kwargs.pop(
@@ -122,6 +165,7 @@ async def serve_http(
         logger.info("Shutting down FastAPI HTTP server.")
         return server.shutdown()
     finally:
+        _cleanup_ssl_tempfiles(ssl_tmpfiles)
         watchdog_task.cancel()
 
 

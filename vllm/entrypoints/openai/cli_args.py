@@ -129,6 +129,8 @@ class FrontendArgs:
     """The file path to the SSL key file."""
     ssl_certfile: str | None = None
     """The file path to the SSL cert file."""
+    ssl_keyfile_password: str | None = None
+    """Password for the SSL key file, if encrypted."""
     ssl_ca_certs: str | None = None
     """The CA certificates file."""
     enable_ssl_refresh: bool = False

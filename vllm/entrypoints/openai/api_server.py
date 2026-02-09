@@ -481,6 +481,7 @@ async def run_server_worker(
             timeout_keep_alive=envs.VLLM_HTTP_TIMEOUT_KEEP_ALIVE,
             ssl_keyfile=args.ssl_keyfile,
             ssl_certfile=args.ssl_certfile,
+            ssl_keyfile_password=args.ssl_keyfile_password,
             ssl_ca_certs=args.ssl_ca_certs,
             ssl_cert_reqs=args.ssl_cert_reqs,
             ssl_ciphers=args.ssl_ciphers,
