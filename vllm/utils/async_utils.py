@@ -113,18 +113,42 @@ class AsyncMicrobatchTokenizer:
                 # If every request uses identical kwargs we can run a single
                 # batched tokenizer call for a big speed-up.
                 if can_batch and len(prompts) > 1:
-                    batch_encode_fn = partial(self.tokenizer, prompts, **kwargs)
-                    results = await self._loop.run_in_executor(
-                        self._executor, batch_encode_fn
-                    )
+                    # Use tokenizer.__call__ for batched encoding when
+                    # possible (fast tokenizers benefit from Rust-level
+                    # parallelism).  If it fails (e.g. slow tokenizers
+                    # whose __call__ pipeline hits pad() with None
+                    # values), fall back to per-prompt encode().
+                    try:
+                        batch_encode_fn = partial(
+                            self.tokenizer, prompts, **kwargs
+                        )
+                        results = await self._loop.run_in_executor(
+                            self._executor, batch_encode_fn
+                        )
 
-                    for i, fut in enumerate(result_futures):
-                        if not fut.done():
-                            data = {k: v[i] for k, v in results.items()}
-                            fut.set_result(BatchEncoding(data))
+                        for i, fut in enumerate(result_futures):
+                            if not fut.done():
+                                data = {k: v[i] for k, v in results.items()}
+                                fut.set_result(BatchEncoding(data))
+                    except (ValueError, TypeError):
+                        encode_fn = lambda p=prompts, kw=kwargs: [
+                            BatchEncoding(
+                                {"input_ids": self.tokenizer.encode(s, **kw)}
+                            )
+                            for s in p
+                        ]
+                        results = await self._loop.run_in_executor(
+                            self._executor, encode_fn
+                        )
+                        for fut, res in zip(result_futures, results):
+                            if not fut.done():
+                                fut.set_result(res)
                 else:
                     encode_fn = lambda prompts=prompts, kwargs=kwargs_list: [
-                        self.tokenizer(p, **kw) for p, kw in zip(prompts, kwargs)
+                        BatchEncoding(
+                            {"input_ids": self.tokenizer.encode(p, **kw)}
+                        )
+                        for p, kw in zip(prompts, kwargs)
                     ]
                     results = await self._loop.run_in_executor(
                         self._executor, encode_fn
