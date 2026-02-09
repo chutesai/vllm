@@ -324,8 +324,12 @@ class BaseRenderer(ABC):
     ):
         dict_prompts = await self.render_prompts_async(prompts)
 
-        # NOTE: MM data cannot be passed to online Completions API
-        # so we don't have the special case that is in the offline version
+        # NOTE: Some MM models have non-default `add_special_tokens`
+        # so we handle tokenization in multi-modal processor
+        if self.config.is_multimodal_model:
+            self._apply_prompt_extras(dict_prompts, prompt_extras)
+            return dict_prompts
+
         tok_prompts = await self.tokenize_prompts_async(dict_prompts, tok_params)
 
         self._apply_prompt_extras(tok_prompts, prompt_extras)
