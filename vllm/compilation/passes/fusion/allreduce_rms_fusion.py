@@ -729,14 +729,24 @@ class AllReduceFusionPass(VllmPatternMatcherPass):
             scope="global",
         )
 
-        self.workspace = flashinfer_comm.create_allreduce_fusion_workspace(
-            backend="trtllm",
-            world_size=self.tp_size,
-            rank=rank,
-            max_token_num=self.max_token_num,
-            hidden_dim=self.hidden_dim,
-            dtype=self.model_dtype,
-        )
+        try:
+            self.workspace = flashinfer_comm.create_allreduce_fusion_workspace(
+                backend="trtllm",
+                world_size=self.tp_size,
+                rank=rank,
+                max_token_num=self.max_token_num,
+                hidden_dim=self.hidden_dim,
+                dtype=self.model_dtype,
+            )
+        except RuntimeError as e:
+            logger.warning(
+                "Failed to create allreduce fusion workspace: %s. "
+                "Skipping allreduce fusion pass. This can happen when "
+                "the GPU does not support multicast (e.g. no NVSwitch "
+                "or CUDA forward compatibility issue).",
+                str(e),
+            )
+            return
 
         global _FI_WORKSPACE
         _FI_WORKSPACE = self.workspace
