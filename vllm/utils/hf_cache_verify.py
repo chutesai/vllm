@@ -428,12 +428,12 @@ def _verify_cache(
                 msg_parts.append(f"    - {m}")
         if extra:
             msg_parts.append(f"  Extra ({len(extra)}):")
-            for e in extra:
-                msg_parts.append(f"    - {e}")
+            for x in extra:
+                msg_parts.append(f"    - {x}")
         if errors:
             msg_parts.append(f"  Errors ({len(errors)}):")
-            for e in errors:
-                msg_parts.append(f"    - {e}")
+            for err in errors:
+                msg_parts.append(f"    - {err}")
         logger.fatal("\n".join(msg_parts))
         os._exit(99)
 
@@ -444,6 +444,24 @@ def _verify_cache(
         verified,
         skipped,
     )
+
+
+def _parse_hf_cache_path(model_path: str) -> tuple[str, str] | None:
+    """Try to extract (repo_id, revision) from an HF cache snapshot path.
+
+    HF cache paths look like:
+        .../models--{org}--{name}/snapshots/{commit_hash}[/...]
+
+    Returns (repo_id, revision) if the path matches, else None.
+    """
+    parts = Path(model_path).parts
+    for i, part in enumerate(parts):
+        if part.startswith("models--") and i + 2 < len(parts):
+            if parts[i + 1] == "snapshots":
+                repo_id = part[len("models--") :].replace("--", "/", 1)
+                revision = parts[i + 2]
+                return repo_id, revision
+    return None
 
 
 def verify_model_cache(
@@ -466,13 +484,35 @@ def verify_model_cache(
         full_hash_check: If True, compute full file hashes instead of
             checking symlink names. Much slower but more thorough.
     """
-    # Skip verification for local model paths.
+    repo_id = model
+    cache_dir = download_dir
+
     if os.path.isdir(model):
-        logger.info(
-            "Skipping HF cache verification for local model path: %s",
-            model,
-        )
-        return
+        # The model path is a local directory. Check if it's an HF cache
+        # snapshot path (e.g. offline mode resolves to
+        # /cache/hub/models--org--name/snapshots/{hash}) — if so, parse
+        # out the repo_id and revision so we can still verify.
+        parsed = _parse_hf_cache_path(model)
+        if parsed is not None:
+            repo_id, parsed_revision = parsed
+            if revision is None:
+                revision = parsed_revision
+            # Derive cache_dir from the path (everything before models--).
+            idx = model.find("models--")
+            if idx > 0:
+                cache_dir = model[:idx].rstrip("/")
+            logger.info(
+                "Detected HF cache path, verifying %s@%s (cache_dir=%s)",
+                repo_id,
+                revision,
+                cache_dir,
+            )
+        else:
+            logger.info(
+                "Skipping HF cache verification for local model path: %s",
+                model,
+            )
+            return
 
     if revision is None:
         revision = "main"
@@ -481,9 +521,9 @@ def verify_model_cache(
 
     try:
         _verify_cache(
-            repo_id=model,
+            repo_id=repo_id,
             revision=revision,
-            cache_dir=download_dir,
+            cache_dir=cache_dir,
             hf_token=hf_token,
             full_hash_check=full_hash_check,
         )

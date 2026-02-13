@@ -100,36 +100,10 @@ class Executor(ABC):
         self.device_config = vllm_config.device_config
         self.speculative_config = vllm_config.speculative_config
         self.observability_config = vllm_config.observability_config
-        self._verify_hf_cache()
         self._init_executor()
         self.is_sleeping = False
         self.sleeping_tags: set[str] = set()
         self.kv_output_aggregator: KVOutputAggregator | None = None
-
-    def _verify_hf_cache(self) -> None:
-        """Verify HF model cache integrity before loading.
-
-        Exits the process on any discrepancy.
-        """
-        from vllm.utils.hf_cache_verify import verify_model_cache
-
-        model_config = self.model_config
-        load_config = self.load_config
-
-        # Skip for non-HF load formats (dummy weights, tensorizer, etc.)
-        if load_config.load_format in ("dummy", "tensorizer"):
-            return
-
-        hf_token = model_config.hf_token
-        if isinstance(hf_token, bool):
-            hf_token = None
-
-        verify_model_cache(
-            model=model_config.model,
-            revision=model_config.revision,
-            download_dir=load_config.download_dir,
-            hf_token=hf_token,
-        )
 
     @abstractmethod
     def _init_executor(self) -> None:
