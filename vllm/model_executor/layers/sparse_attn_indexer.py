@@ -103,38 +103,48 @@ def sparse_attn_indexer(
                 chunk.cu_seq_lens,
             )
 
-            logits = fp8_mqa_logits(
-                q_fp8[chunk.token_start : chunk.token_end],
-                (k_fp8, k_scale.view(torch.float32).flatten()),
-                weights[chunk.token_start : chunk.token_end],
-                chunk.cu_seqlen_ks,
-                chunk.cu_seqlen_ke,
-                clean_logits=False,
-            )
-            num_rows = logits.shape[0]
+            # Sub-chunk queries to bound peak memory of the dense
+            # [M, N] logits matrix (float32).  Without this, a single
+            # long sequence produces an O(L^2) allocation that OOMs.
+            num_query_tokens = chunk.token_end - chunk.token_start
+            kv_data = (k_fp8, k_scale.view(torch.float32).flatten())
+            _MAX_LOGITS_BYTES = 2 * 1024**3  # 2 GiB budget
+            if chunk.total_seq_lens > 0:
+                sub_chunk_size = max(
+                    1, _MAX_LOGITS_BYTES // (chunk.total_seq_lens * 4)
+                )
+            else:
+                sub_chunk_size = num_query_tokens
 
-            topk_indices = topk_indices_buffer[
-                chunk.token_start : chunk.token_end, :topk_tokens
-            ]
-            torch.ops._C.top_k_per_row_prefill(
-                logits,
-                chunk.cu_seqlen_ks,
-                chunk.cu_seqlen_ke,
-                topk_indices,
-                num_rows,
-                logits.stride(0),
-                logits.stride(1),
-                topk_tokens,
-            )
+            for sub_start in range(0, num_query_tokens, sub_chunk_size):
+                sub_end = min(sub_start + sub_chunk_size, num_query_tokens)
+                g_start = chunk.token_start + sub_start
+                g_end = chunk.token_start + sub_end
 
-            # Compute lengths from row spans
-            # lengths = (chunk.cu_seqlen_ke - chunk.cu_seqlen_ks).to(torch.int32)
-            # torch.ops._C.large_context_topk(
-            #    logits,
-            #    topk_indices,
-            #    lengths,
-            #    chunk.cu_seqlen_ks,  # row_starts
-            # )
+                logits = fp8_mqa_logits(
+                    q_fp8[g_start:g_end],
+                    kv_data,
+                    weights[g_start:g_end],
+                    chunk.cu_seqlen_ks[sub_start:sub_end],
+                    chunk.cu_seqlen_ke[sub_start:sub_end],
+                    clean_logits=False,
+                )
+                sub_rows = logits.shape[0]
+
+                topk_indices = topk_indices_buffer[
+                    g_start:g_end, :topk_tokens
+                ]
+                torch.ops._C.top_k_per_row_prefill(
+                    logits,
+                    chunk.cu_seqlen_ks[sub_start:sub_end],
+                    chunk.cu_seqlen_ke[sub_start:sub_end],
+                    topk_indices,
+                    sub_rows,
+                    logits.stride(0),
+                    logits.stride(1),
+                    topk_tokens,
+                )
+                del logits
 
     if has_decode:
         decode_metadata = attn_metadata.decode
