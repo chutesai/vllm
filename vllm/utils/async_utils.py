@@ -119,9 +119,7 @@ class AsyncMicrobatchTokenizer:
                     # whose __call__ pipeline hits pad() with None
                     # values), fall back to per-prompt encode().
                     try:
-                        batch_encode_fn = partial(
-                            self.tokenizer, prompts, **kwargs
-                        )
+                        batch_encode_fn = partial(self.tokenizer, prompts, **kwargs)
                         results = await self._loop.run_in_executor(
                             self._executor, batch_encode_fn
                         )
@@ -132,9 +130,7 @@ class AsyncMicrobatchTokenizer:
                                 fut.set_result(BatchEncoding(data))
                     except (ValueError, TypeError):
                         encode_fn = lambda p=prompts, kw=kwargs: [
-                            BatchEncoding(
-                                {"input_ids": self.tokenizer.encode(s, **kw)}
-                            )
+                            BatchEncoding({"input_ids": self.tokenizer.encode(s, **kw)})
                             for s in p
                         ]
                         results = await self._loop.run_in_executor(
@@ -145,9 +141,7 @@ class AsyncMicrobatchTokenizer:
                                 fut.set_result(res)
                 else:
                     encode_fn = lambda prompts=prompts, kwargs=kwargs_list: [
-                        BatchEncoding(
-                            {"input_ids": self.tokenizer.encode(p, **kw)}
-                        )
+                        BatchEncoding({"input_ids": self.tokenizer.encode(p, **kw)})
                         for p, kw in zip(prompts, kwargs)
                     ]
                     results = await self._loop.run_in_executor(

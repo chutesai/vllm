@@ -110,9 +110,7 @@ def sparse_attn_indexer(
             kv_data = (k_fp8, k_scale.view(torch.float32).flatten())
             _MAX_LOGITS_BYTES = 2 * 1024**3  # 2 GiB budget
             if chunk.total_seq_lens > 0:
-                sub_chunk_size = max(
-                    1, _MAX_LOGITS_BYTES // (chunk.total_seq_lens * 4)
-                )
+                sub_chunk_size = max(1, _MAX_LOGITS_BYTES // (chunk.total_seq_lens * 4))
             else:
                 sub_chunk_size = num_query_tokens
 
@@ -131,9 +129,7 @@ def sparse_attn_indexer(
                 )
                 sub_rows = logits.shape[0]
 
-                topk_indices = topk_indices_buffer[
-                    g_start:g_end, :topk_tokens
-                ]
+                topk_indices = topk_indices_buffer[g_start:g_end, :topk_tokens]
                 torch.ops._C.top_k_per_row_prefill(
                     logits,
                     chunk.cu_seqlen_ks[sub_start:sub_end],
