@@ -20,7 +20,6 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
 
 from vllm.logger import init_logger
 
@@ -29,7 +28,7 @@ logger = init_logger(__name__)
 CHUTES_PROXY_URL = "https://proxy.chutes.ai/misc/hf_repo_info"
 
 
-def _get_symlink_hash(file_path: Path) -> Optional[str]:
+def _get_symlink_hash(file_path: Path) -> str | None:
     """Extract hash from symlink target (blob filename).
 
     HF cache stores files as symlinks pointing to blobs named by hash:
@@ -70,7 +69,7 @@ def _compute_sha256(filepath: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
 def _fetch_repo_info_from_hf(
     repo_id: str,
     revision: str,
-    hf_token: Optional[str] = None,
+    hf_token: str | None = None,
 ) -> dict:
     """Fetch repository file metadata directly from HuggingFace Hub."""
     from huggingface_hub import HfApi
@@ -113,7 +112,7 @@ def _fetch_repo_info_from_hf(
 def _fetch_repo_info_from_proxy(
     repo_id: str,
     revision: str,
-    hf_token: Optional[str] = None,
+    hf_token: str | None = None,
 ) -> dict:
     """Fetch repository file metadata from chutes proxy (fallback)."""
     params: dict[str, str] = {
@@ -131,16 +130,14 @@ def _fetch_repo_info_from_proxy(
     with urllib.request.urlopen(req, timeout=30) as resp:
         if resp.status != 200:
             body = resp.read().decode(errors="replace")
-            raise RuntimeError(
-                f"Chutes proxy returned {resp.status}: {body}"
-            )
+            raise RuntimeError(f"Chutes proxy returned {resp.status}: {body}")
         return json.loads(resp.read().decode())
 
 
 def _get_repo_info(
     repo_id: str,
     revision: str,
-    hf_token: Optional[str] = None,
+    hf_token: str | None = None,
 ) -> dict:
     """Get repo info from HF directly, falling back to chutes proxy."""
     # Try HuggingFace directly first.
@@ -185,7 +182,7 @@ def _get_repo_info(
 def _find_snapshot_dir(
     repo_id: str,
     revision: str,
-    cache_dir: Optional[str],
+    cache_dir: str | None,
 ) -> Path:
     """Locate the HF cache snapshot directory for a given repo/revision.
 
@@ -209,9 +206,7 @@ def _find_snapshot_dir(
     repo_dir = hf_cache / repo_folder
 
     if not repo_dir.is_dir():
-        logger.fatal(
-            "HF cache repo directory not found: %s", repo_dir
-        )
+        logger.fatal("HF cache repo directory not found: %s", repo_dir)
         os._exit(99)
 
     snapshots_dir = repo_dir / "snapshots"
@@ -231,9 +226,7 @@ def _find_snapshot_dir(
 
     # If there's exactly one snapshot, use that.
     if snapshots_dir.is_dir():
-        snapshot_dirs = [
-            d for d in snapshots_dir.iterdir() if d.is_dir()
-        ]
+        snapshot_dirs = [d for d in snapshots_dir.iterdir() if d.is_dir()]
         if len(snapshot_dirs) == 1:
             logger.info(
                 "Could not resolve revision '%s' from refs, using "
@@ -255,8 +248,8 @@ def _find_snapshot_dir(
 def _verify_cache(
     repo_id: str,
     revision: str,
-    cache_dir: Optional[str] = None,
-    hf_token: Optional[str] = None,
+    cache_dir: str | None = None,
+    hf_token: str | None = None,
     full_hash_check: bool = False,
     max_workers: int = 4,
 ) -> None:
@@ -314,14 +307,10 @@ def _verify_cache(
     # (remote_path, resolved_path, expected_hash, hash_type)
     files_to_hash: list[tuple[str, Path, str, str]] = []
 
-    for remote_path, (remote_hash, remote_size, is_lfs) in (
-        remote_files.items()
-    ):
+    for remote_path, (remote_hash, remote_size, is_lfs) in remote_files.items():
         local_path = local_files.get(remote_path)
 
-        if not local_path or (
-            not local_path.exists() and not local_path.is_symlink()
-        ):
+        if not local_path or (not local_path.exists() and not local_path.is_symlink()):
             missing.append(remote_path)
             continue
 
@@ -337,8 +326,7 @@ def _verify_cache(
                 actual_size = resolved_path.stat().st_size
                 if actual_size != remote_size:
                     mismatches.append(
-                        f"{remote_path}: size {actual_size} "
-                        f"!= expected {remote_size}"
+                        f"{remote_path}: size {actual_size} != expected {remote_size}"
                     )
                     continue
             except OSError as e:
@@ -362,8 +350,7 @@ def _verify_cache(
                         verified += 1
                 else:
                     errors.append(
-                        f"{remote_path}: LFS file not a symlink, "
-                        "cannot fast-verify"
+                        f"{remote_path}: LFS file not a symlink, cannot fast-verify"
                     )
         else:
             if full_hash_check:
@@ -396,7 +383,7 @@ def _verify_cache(
 
         def _compute_hash(
             item: tuple[str, Path, str, str],
-        ) -> tuple[str, Optional[str], str, Optional[str]]:
+        ) -> tuple[str, str | None, str, str | None]:
             rpath, resolved, expected, hash_type = item
             try:
                 if hash_type == "sha256":
@@ -412,13 +399,10 @@ def _verify_cache(
 
         for remote_path, computed, expected, error in results:
             if error:
-                errors.append(
-                    f"{remote_path}: hash computation failed: {error}"
-                )
+                errors.append(f"{remote_path}: hash computation failed: {error}")
             elif computed != expected:
                 mismatches.append(
-                    f"{remote_path}: hash {computed} "
-                    f"!= expected {expected}"
+                    f"{remote_path}: hash {computed} != expected {expected}"
                 )
             else:
                 verified += 1
@@ -433,9 +417,7 @@ def _verify_cache(
     ]
 
     if mismatches or missing or extra or errors:
-        msg_parts = [
-            f"Cache verification FAILED for {repo_id}@{revision}"
-        ]
+        msg_parts = [f"Cache verification FAILED for {repo_id}@{revision}"]
         if mismatches:
             msg_parts.append(f"  Mismatches ({len(mismatches)}):")
             for m in mismatches:
@@ -466,9 +448,9 @@ def _verify_cache(
 
 def verify_model_cache(
     model: str,
-    revision: Optional[str],
-    download_dir: Optional[str],
-    hf_token: Optional[str] = None,
+    revision: str | None,
+    download_dir: str | None,
+    hf_token: str | None = None,
     full_hash_check: bool = False,
 ) -> None:
     """Verify HuggingFace model cache integrity before loading.
@@ -495,9 +477,7 @@ def verify_model_cache(
     if revision is None:
         revision = "main"
 
-    logger.info(
-        "Starting HF cache verification for %s@%s", model, revision
-    )
+    logger.info("Starting HF cache verification for %s@%s", model, revision)
 
     try:
         _verify_cache(
@@ -509,8 +489,7 @@ def verify_model_cache(
         )
     except Exception as e:
         logger.fatal(
-            "Unexpected error during cache verification for "
-            "%s@%s: %s",
+            "Unexpected error during cache verification for %s@%s: %s",
             model,
             revision,
             e,
