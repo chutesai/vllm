@@ -16,6 +16,7 @@ from vllm.entrypoints.openai.engine.protocol import ErrorResponse
 from vllm.entrypoints.openai.orca_metrics import metrics_header
 from vllm.entrypoints.openai.utils import validate_json_request
 from vllm.entrypoints.utils import (
+    abort_on_disconnect,
     load_aware_call,
     with_cancellation,
 )
@@ -70,7 +71,12 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
             headers=metrics_header(metrics_header_format),
         )
 
-    return StreamingResponse(content=generator, media_type="text/event-stream")
+    request_id = raw_request.state.request_metadata.request_id
+    engine = raw_request.app.state.engine_client
+    return StreamingResponse(
+        content=abort_on_disconnect(raw_request, generator, engine, request_id),
+        media_type="text/event-stream",
+    )
 
 
 @router.post(
