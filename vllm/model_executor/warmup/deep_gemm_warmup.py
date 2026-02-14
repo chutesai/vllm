@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 import vllm.envs as envs
 from vllm.distributed.parallel_state import get_dp_group, is_global_first_rank
+from vllm.logger import init_logger
 from vllm.model_executor.layers.fused_moe.deep_gemm_moe import DeepGemmExperts
 from vllm.model_executor.layers.fused_moe.deep_gemm_utils import compute_aligned_M
 from vllm.model_executor.layers.fused_moe.layer import FusedMoE, FusedMoEModularMethod
@@ -26,6 +27,8 @@ from vllm.utils.deep_gemm import (
     m_grouped_fp8_gemm_nt_contiguous,
 )
 from vllm.utils.math_utils import cdiv
+
+logger = init_logger(__name__)
 
 
 def _generate_optimal_warmup_m_values(
@@ -366,26 +369,44 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
         return
 
     def _run_warmup(show_pbar: bool):
-        if show_pbar:
-            with tqdm(total=total, desc="DeepGEMM warmup") as pbar:
-                deepgemm_fp8_gemm_nt_warmup(model, max_tokens, pbar)
-                deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
-                    model, max_tokens, pbar)
-        else:
-            deepgemm_fp8_gemm_nt_warmup(model, max_tokens, None)
-            deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
-                model, max_tokens, None)
+        def _do_warmup(pbar):
+            deepgemm_fp8_gemm_nt_warmup(model, max_tokens, pbar)
+            deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(model, max_tokens, pbar)
+
+        try:
+            if show_pbar:
+                with tqdm(total=total, desc="DeepGEMM warmup") as pbar:
+                    _do_warmup(pbar)
+            else:
+                _do_warmup(None)
+        except torch.cuda.OutOfMemoryError:
+            logger.warning(
+                "OOM during DeepGEMM warmup, freeing memory "
+                "and retrying once (JIT cache should be warm)."
+            )
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            if show_pbar:
+                with tqdm(total=total, desc="DeepGEMM warmup (retry)") as pbar:
+                    _do_warmup(pbar)
+            else:
+                _do_warmup(None)
 
     dp_group = get_dp_group()
 
     if dp_group.world_size > 1:
-        # Only DP rank 0 runs the DeepGEMM warmup to populate the JIT cache.
-        # Other DP ranks skip warmup entirely to avoid CUDA illegal memory
-        # access errors caused by concurrent DeepGEMM kernel execution across
-        # multiple processes. The JIT cache will be warm after rank 0 finishes,
-        # so other ranks will load cached kernels on first inference use.
+        # Serialize DeepGEMM warmup across DP ranks to avoid concurrent JIT
+        # compilation causing CUDA illegal memory access errors.
+        # DP rank 0 goes first to populate the JIT cache on disk, then
+        # remaining ranks load from the warm cache without recompilation.
+        # All ranks must warm up so that CUDA modules are loaded into GPU
+        # memory before CUDA graph capture; otherwise, kernel loading during
+        # graph capture causes OOM and empty-graph warnings.
         if dp_group.rank_in_group == 0:
             _run_warmup(show_pbar=is_global_first_rank())
+        dp_group.barrier()
+        if dp_group.rank_in_group != 0:
+            _run_warmup(show_pbar=False)
         dp_group.barrier()
     else:
         _run_warmup(show_pbar=is_global_first_rank())

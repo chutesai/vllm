@@ -495,12 +495,40 @@ class Worker(WorkerBase):
         self.model_runner.maybe_remove_all_loras(self.model_runner.lora_config)
 
         # Warmup and tune the kernels used during model execution before
-        # cuda graph capture.
-        kernel_warmup(self)
+        # cuda graph capture. Retry once on OOM since JIT compilation
+        # (e.g. DeepGEMM) can spike memory, but the compiled kernels
+        # get cached to disk so the retry typically succeeds.
+        try:
+            kernel_warmup(self)
+        except torch.cuda.OutOfMemoryError:
+            logger.warning(
+                "OOM during kernel warmup, freeing memory and retrying once."
+            )
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            kernel_warmup(self)
+
+        # Reclaim temporary memory from kernel warmup (JIT compilation
+        # artifacts, temporary tensors) before CUDA graph capture.
+        # This is especially important in TEE environments where memory
+        # deallocation may be slower and fragmentation more severe.
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
 
         cuda_graph_memory_bytes = 0
         if not self.model_config.enforce_eager:
-            cuda_graph_memory_bytes = self.model_runner.capture_model()
+            # Retry once on OOM - CUDA graph capture can spike memory,
+            # but inductor/triton caches from the first attempt persist
+            # on disk, reducing memory pressure on retry.
+            try:
+                cuda_graph_memory_bytes = self.model_runner.capture_model()
+            except torch.cuda.OutOfMemoryError:
+                logger.warning(
+                    "OOM during CUDA graph capture, freeing memory and retrying once."
+                )
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                cuda_graph_memory_bytes = self.model_runner.capture_model()
 
         if self.cache_config.kv_cache_memory_bytes is None and hasattr(
             self, "peak_activation_memory"
