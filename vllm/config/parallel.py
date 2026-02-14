@@ -705,6 +705,13 @@ class ParallelConfig:
             logger.debug(
                 "Disabled the custom all-reduce since we are running on multi-node."
             )
+        if self.data_parallel_size > 1:
+            self.disable_custom_all_reduce = True
+            logger.debug(
+                "Disabled the custom all-reduce since data parallelism "
+                "is enabled. Multiple DP ranks sharing the same GPUs "
+                "causes IPC handle failures during CUDA graph capture."
+            )
         if self.ray_workers_use_nsight and not self.use_ray:
             raise ValueError(
                 "Unable to use nsight profiling unless workers run with Ray."
