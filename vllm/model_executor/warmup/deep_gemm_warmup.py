@@ -379,13 +379,13 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
     dp_group = get_dp_group()
 
     if dp_group.world_size > 1:
-        # Serialize warmup across DP ranks to avoid DeepGEMM JIT cache
-        # race conditions. DP rank 0 goes first to populate the JIT cache,
-        # then remaining ranks load from the warm cache without recompiling.
+        # Only DP rank 0 runs the DeepGEMM warmup to populate the JIT cache.
+        # Other DP ranks skip warmup entirely to avoid CUDA illegal memory
+        # access errors caused by concurrent DeepGEMM kernel execution across
+        # multiple processes. The JIT cache will be warm after rank 0 finishes,
+        # so other ranks will load cached kernels on first inference use.
         if dp_group.rank_in_group == 0:
             _run_warmup(show_pbar=is_global_first_rank())
         dp_group.barrier()
-        if dp_group.rank_in_group != 0:
-            _run_warmup(show_pbar=False)
     else:
         _run_warmup(show_pbar=is_global_first_rank())
