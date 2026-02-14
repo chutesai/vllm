@@ -530,6 +530,10 @@ class Worker(WorkerBase):
                 torch.cuda.empty_cache()
                 cuda_graph_memory_bytes = self.model_runner.capture_model()
 
+        # Reclaim graph capture temporaries before kv cache allocation.
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
         if self.cache_config.kv_cache_memory_bytes is None and hasattr(
             self, "peak_activation_memory"
         ):
