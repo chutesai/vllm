@@ -365,11 +365,27 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
     if total == 0:
         return
 
-    # Only show progress bar on rank 0 to avoid cluttered output
-    if is_global_first_rank():
-        with tqdm(total=total, desc="DeepGEMM warmup") as pbar:
-            deepgemm_fp8_gemm_nt_warmup(model, max_tokens, pbar)
-            deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(model, max_tokens, pbar)
+    def _run_warmup(show_pbar: bool):
+        if show_pbar:
+            with tqdm(total=total, desc="DeepGEMM warmup") as pbar:
+                deepgemm_fp8_gemm_nt_warmup(model, max_tokens, pbar)
+                deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
+                    model, max_tokens, pbar)
+        else:
+            deepgemm_fp8_gemm_nt_warmup(model, max_tokens, None)
+            deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
+                model, max_tokens, None)
+
+    dp_group = get_dp_group()
+
+    if dp_group.world_size > 1:
+        # Serialize warmup across DP ranks to avoid DeepGEMM JIT cache
+        # race conditions. DP rank 0 goes first to populate the JIT cache,
+        # then remaining ranks load from the warm cache without recompiling.
+        if dp_group.rank_in_group == 0:
+            _run_warmup(show_pbar=is_global_first_rank())
+        dp_group.barrier()
+        if dp_group.rank_in_group != 0:
+            _run_warmup(show_pbar=False)
     else:
-        deepgemm_fp8_gemm_nt_warmup(model, max_tokens, None)
-        deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(model, max_tokens, None)
+        _run_warmup(show_pbar=is_global_first_rank())
