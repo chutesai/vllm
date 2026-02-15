@@ -463,6 +463,12 @@ class Worker(WorkerBase):
 
     @instrument(span_name="Warmup (GPU)")
     def compile_or_warm_up_model(self) -> None:
+        # Flush any pending async CUDA errors from KV transfer / connector
+        # initialization (e.g. LMCache).  Without this, errors from the
+        # previous phase surface as confusing failures inside DeepGEMM
+        # warmup (CUDA_ERROR_ILLEGAL_ADDRESS from cuModuleLoad).
+        torch.cuda.synchronize()
+
         warmup_sizes = []
 
         if self.vllm_config.compilation_config.mode == CompilationMode.VLLM_COMPILE:

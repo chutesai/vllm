@@ -147,12 +147,26 @@ def _lazy_init() -> None:
     if not has_deep_gemm():
         return
 
-    # Set up deep_gemm cache path
+    # Set up deep_gemm cache path.
+    # Each worker gets its own subdirectory to prevent concurrent JIT
+    # compilation from corrupting shared .cubin files — DeepGEMM has
+    # no file locking, so simultaneous writes (e.g. during profile_run
+    # which runs all workers concurrently) can produce corrupt cache
+    # entries that cause CUDA_ERROR_ILLEGAL_ADDRESS on subsequent loads.
     DEEP_GEMM_JIT_CACHE_ENV_NAME = "DG_JIT_CACHE_DIR"
-    if not os.environ.get(DEEP_GEMM_JIT_CACHE_ENV_NAME, None):
+    base_cache_dir = os.environ.get(DEEP_GEMM_JIT_CACHE_ENV_NAME, None)
+    if base_cache_dir is None:
+        base_cache_dir = os.path.join(envs.VLLM_CACHE_ROOT, "deep_gemm")
+
+    import torch.distributed as dist
+
+    if dist.is_initialized():
+        rank = dist.get_rank()
         os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = os.path.join(
-            envs.VLLM_CACHE_ROOT, "deep_gemm"
+            base_cache_dir, f"rank_{rank}"
         )
+    else:
+        os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = base_cache_dir
 
     _dg = importlib.import_module("deep_gemm")
 

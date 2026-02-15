@@ -9,6 +9,7 @@ happen during model execution.
 from typing import TYPE_CHECKING
 
 import torch
+import torch.distributed as dist
 
 import vllm.envs as envs
 from vllm.logger import init_logger
@@ -35,6 +36,20 @@ def kernel_warmup(worker: "Worker"):
         model = worker.get_model()
         max_tokens = worker.scheduler_config.max_num_batched_tokens
         deep_gemm_warmup(model, max_tokens)
+
+    # Synchronize all workers before proceeding to FlashInfer autotuning
+    # and attention warmup.  These phases call _dummy_run() which involves
+    # NCCL collective operations (e.g. EP all-to-all) that require ALL
+    # workers to participate simultaneously.  DeepGEMM warmup is per-worker
+    # JIT compilation that can take variable time (depending on cache state),
+    # so without this barrier some workers may enter _dummy_run while others
+    # are still compiling, causing an NCCL deadlock.
+    if dist.is_initialized():
+        logger.info(
+            "Waiting for all workers to finish kernel warmup "
+            "before FlashInfer autotuning."
+        )
+        dist.barrier()
 
     enable_flashinfer_autotune = (
         worker.vllm_config.kernel_config.enable_flashinfer_autotune
