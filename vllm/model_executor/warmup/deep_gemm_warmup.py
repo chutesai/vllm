@@ -395,18 +395,17 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
     dp_group = get_dp_group()
 
     if dp_group.world_size > 1:
-        # Serialize DeepGEMM warmup across DP ranks to avoid concurrent JIT
-        # compilation causing CUDA illegal memory access errors.
+        # Serialize DeepGEMM warmup one DP rank at a time to avoid concurrent
+        # JIT cache loading causing CUDA illegal memory access errors.
         # DP rank 0 goes first to populate the JIT cache on disk, then
-        # remaining ranks load from the warm cache without recompilation.
+        # each subsequent rank loads from the warm cache individually.
         # All ranks must warm up so that CUDA modules are loaded into GPU
         # memory before CUDA graph capture; otherwise, kernel loading during
         # graph capture causes OOM and empty-graph warnings.
-        if dp_group.rank_in_group == 0:
-            _run_warmup(show_pbar=is_global_first_rank())
-        dp_group.barrier()
-        if dp_group.rank_in_group != 0:
-            _run_warmup(show_pbar=False)
-        dp_group.barrier()
+        for dp_rank in range(dp_group.world_size):
+            if dp_group.rank_in_group == dp_rank:
+                _run_warmup(
+                    show_pbar=(dp_rank == 0 and is_global_first_rank()))
+            dp_group.barrier()
     else:
         _run_warmup(show_pbar=is_global_first_rank())
