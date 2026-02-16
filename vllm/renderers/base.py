@@ -464,12 +464,6 @@ class BaseRenderer(ABC, Generic[_T]):
 
         dict_prompts = await self.render_prompts_async(prompts)
 
-        # NOTE: Some MM models have non-default `add_special_tokens`
-        # so we handle tokenization in multi-modal processor
-        if self.model_config.is_multimodal_model:
-            self._apply_prompt_extras(dict_prompts, prompt_extras)
-            return dict_prompts
-
         tok_prompts = await self.tokenize_prompts_async(dict_prompts, tok_params)
 
         self._apply_prompt_extras(tok_prompts, prompt_extras)
