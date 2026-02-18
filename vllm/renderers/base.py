@@ -651,6 +651,11 @@ class BaseRenderer(ABC, Generic[_T]):
 
         engine_prompt["arrival_time"] = arrival_time
 
+        # Carry forward metadata keys for checksum computation
+        for key in ("_chat_template", "_templated_prompt"):
+            if key in prompt:
+                engine_prompt[key] = prompt[key]  # type: ignore[literal-required]
+
         return engine_prompt
 
     # Top-level methods
