@@ -591,18 +591,7 @@ def _resolve_vision_chunk_items(
             if hasattr(mm_processor, "split_video_chunks") and data is not None:
                 try:
                     video_uuid = uuid or random_uuid()
-                    # video await result is (video_data, video_meta) tuple
-                    if isinstance(data, tuple) and len(data) >= 1:
-                        frames_or_bytes = data[0]
-                        metadata = data[1] if len(data) > 1 else {}
-                        # Use preprocessed bytes if available (for models
-                        # like Kimi that need raw bytes for their decoder)
-                        video_data = metadata.get(
-                            "preprocessed_video_bytes", frames_or_bytes
-                        )
-                    else:
-                        video_data = data
-                    video_chunks = mm_processor.split_video_chunks(video_data)
+                    video_chunks = mm_processor.split_video_chunks(data)
                     for i, vc in enumerate(video_chunks):
                         processed_chunks.append(
                             VisionChunkVideo(

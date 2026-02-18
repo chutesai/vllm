@@ -326,8 +326,71 @@ class KimiK25MultiModalProcessor(BaseMultiModalProcessor[KimiK25ProcessingInfo])
             ),
         ]
 
-    def split_video_chunks(self, video):
-        return self.info.media_processor.split_video_chunks(video)
+    def split_video_chunks(self, video_data):
+        """Split video into temporal chunks for Kimi-K2.5.
+
+        Reimplements the HF processor's split_video_chunks without
+        requiring mecord. Uses the numpy frames and metadata already
+        produced by our OpenCV video loader.
+
+        Args:
+            video_data: (frames_ndarray, metadata_dict) tuple from
+                VideoMediaIO.load_bytes().
+        """
+        from datetime import datetime, timezone
+
+        from PIL import Image as PILImage
+
+        if not isinstance(video_data, tuple) or len(video_data) < 2:
+            raise TypeError(
+                "split_video_chunks expects (frames, metadata) tuple "
+                f"from VideoMediaIO, got {type(video_data)}"
+            )
+
+        frames, metadata = video_data
+        cfg = self.info.media_processor.media_proc_cfg
+        temporal_merge_kernel_size = cfg["temporal_merge_kernel_size"]
+        timestamp_mode = cfg.get("timestamp_mode", "mm:ss")
+
+        fps = metadata.get("fps", 1.0)
+        frame_indices = metadata.get("frames_indices")
+        num_frames = frames.shape[0]
+
+        chunks = []
+        for i in range(0, num_frames, temporal_merge_kernel_size):
+            chunk_frames = frames[i : i + temporal_merge_kernel_size]
+            pil_frames = [PILImage.fromarray(f) for f in chunk_frames]
+
+            # Compute timestamp from the original frame index
+            if frame_indices and i < len(frame_indices):
+                start_time = frame_indices[i] / float(fps) if fps > 0 else 0.0
+            else:
+                start_time = i / float(fps) if fps > 0 else 0.0
+
+            # Format timestamp (mirrors media_utils.timestamp_as_str)
+            if timestamp_mode == "hh:mm:ss.fff":
+                ts = (
+                    datetime.fromtimestamp(start_time, tz=timezone.utc).strftime(
+                        "%H:%M:%S"
+                    )
+                    + f".{int((start_time % 1) * 1000):03d}"
+                )
+            elif timestamp_mode == "mm:ss.fff":
+                ts = (
+                    datetime.fromtimestamp(start_time, tz=timezone.utc).strftime(
+                        "%M:%S"
+                    )
+                    + f".{int((start_time % 1) * 1000):03d}"
+                )
+            else:
+                ts = datetime.fromtimestamp(start_time, tz=timezone.utc).strftime(
+                    "%M:%S"
+                )
+
+            prompt = self.info.media_processor.make_chunk_prompt(ts)
+            chunks.append({"video_chunk": pil_frames, "prompt": prompt})
+
+        return chunks
 
 
 @MULTIMODAL_REGISTRY.register_processor(
