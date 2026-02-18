@@ -561,14 +561,13 @@ def _resolve_vision_chunk_items(
 ):
     # Process vision_chunk items - extract from (data, modality) tuples
     # and convert to VisionChunk types with proper UUID handling
-    vision_chunks_uuids = [uuid for data, uuid in vision_chunk_items]
-
     assert len(vision_chunk_items) == len(vision_chunks_modality_order), (
         f"vision_chunk items ({len(vision_chunk_items)}) and "
         f"modality_order ({len(vision_chunks_modality_order)}) must have same length"
     )
 
     processed_chunks: list[VisionChunk] = []
+    vision_chunks_uuids: list[str | None] = []
     video_idx = 0
     for inner_modality, (data, uuid) in zip(
         vision_chunks_modality_order, vision_chunk_items
@@ -584,30 +583,34 @@ def _resolve_vision_chunk_items(
                 )
             else:
                 processed_chunks.append(data)  # type: ignore[arg-type]
+            vision_chunks_uuids.append(uuid)
         elif inner_modality == "video":
             # For video, we may need to split into chunks
             # if processor supports it
-            # For now, just wrap as a video chunk placeholder
             if hasattr(mm_processor, "split_video_chunks") and data is not None:
                 try:
                     video_uuid = uuid or random_uuid()
                     video_chunks = mm_processor.split_video_chunks(data)
                     for i, vc in enumerate(video_chunks):
+                        chunk_uuid = f"{video_uuid}-{i}"
                         processed_chunks.append(
                             VisionChunkVideo(
                                 type="video_chunk",
                                 video_chunk=vc["video_chunk"],
-                                uuid=f"{video_uuid}-{i}",
+                                uuid=chunk_uuid,
                                 video_idx=video_idx,
                                 prompt=vc["prompt"],
                             )
                         )
+                        vision_chunks_uuids.append(chunk_uuid)
                     video_idx += 1
                 except Exception as e:
                     logger.warning("Failed to split video chunks: %s", e)
                     processed_chunks.append(data)  # type: ignore[arg-type]
+                    vision_chunks_uuids.append(uuid)
             else:
                 processed_chunks.append(data)  # type: ignore[arg-type]
+                vision_chunks_uuids.append(uuid)
     return processed_chunks, vision_chunks_uuids
 
 
