@@ -209,7 +209,7 @@ class KimiK25ProcessingInfo(BaseProcessingInfo):
         )
         self.media_tokens_calculator = self.media_processor.media_tokens_calculator
 
-    def get_hf_processor(self):
+    def get_hf_processor(self, **kwargs):
         return self.hf_processor
 
     def get_hf_config(self):
