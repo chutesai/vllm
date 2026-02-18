@@ -11,7 +11,7 @@ from PIL import Image
 
 from vllm import envs
 
-from ..video import VIDEO_LOADER_REGISTRY
+from ..video import VIDEO_LOADER_REGISTRY, preprocess_video_bytes
 from .base import MediaIO
 from .image import ImageMediaIO
 
@@ -37,6 +37,10 @@ class VideoMediaIO(MediaIO[tuple[npt.NDArray, dict[str, Any]]]):
         # This enables users to specify a different backend than the
         # global VLLM_VIDEO_LOADER_BACKEND env var, e.g.:
         #   --media-io-kwargs '{"video": {"video_backend": "torchcodec"}}'
+        self.max_height = kwargs.pop("max_height", 0)
+        self.max_width = kwargs.pop("max_width", 0)
+        self.force_codec = kwargs.pop("force_codec", None)
+
         video_loader_backend = (
             kwargs.pop("video_backend", None) or envs.VLLM_VIDEO_LOADER_BACKEND
         )
@@ -44,9 +48,19 @@ class VideoMediaIO(MediaIO[tuple[npt.NDArray, dict[str, Any]]]):
         self.video_loader = VIDEO_LOADER_REGISTRY.load(video_loader_backend)
 
     def load_bytes(self, data: bytes) -> tuple[npt.NDArray, dict[str, Any]]:
-        return self.video_loader.load_bytes(
+        if self.max_height or self.max_width or self.force_codec:
+            data = preprocess_video_bytes(
+                data,
+                max_height=self.max_height,
+                max_width=self.max_width,
+                force_codec=self.force_codec,
+            )
+        frames, metadata = self.video_loader.load_bytes(
             data, num_frames=self.num_frames, **self.kwargs
         )
+        if self.max_height or self.max_width or self.force_codec:
+            metadata["preprocessed_video_bytes"] = data
+        return frames, metadata
 
     def load_base64(
         self, media_type: str, data: str

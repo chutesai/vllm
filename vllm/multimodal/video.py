@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import math
+import shutil
+import subprocess
 from abc import abstractmethod
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, cast
@@ -48,6 +50,91 @@ def sample_frames_from_video(frames: npt.NDArray, num_frames: int) -> npt.NDArra
     frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
     sampled_frames = frames[frame_indices, ...]
     return sampled_frames
+
+
+def preprocess_video_bytes(
+    data: bytes,
+    max_height: int = 0,
+    max_width: int = 0,
+    force_codec: str | None = None,
+) -> bytes:
+    """Re-encode video bytes via ffmpeg: cap resolution and normalize codec.
+
+    Returns original bytes unchanged if ffmpeg is unavailable or
+    no preprocessing is needed.
+
+    Note: This is a synchronous function that spawns an ffmpeg subprocess.
+    In the async serving path, callers already run load_bytes via
+    run_in_executor, so the event loop is not blocked.
+    """
+    if not shutil.which("ffmpeg"):
+        logger.warning(
+            "ffmpeg not found; skipping video preprocessing. "
+            "Install ffmpeg to enable resolution capping and codec normalization."
+        )
+        return data
+
+    cmd: list[str] = ["ffmpeg", "-y", "-i", "pipe:0"]
+
+    # Build video filter for resolution capping
+    if max_height > 0 or max_width > 0:
+        mw = max_width if max_width > 0 else 100000
+        mh = max_height if max_height > 0 else 100000
+        vf = f"scale='min({mw},iw)':'min({mh},ih)':force_original_aspect_ratio=decrease"
+        cmd.extend(["-vf", vf])
+
+    # Codec settings
+    if force_codec == "h264":
+        cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
+    else:
+        cmd.extend(["-c:v", "copy"])
+
+    # Strip audio, streaming MP4 output
+    cmd.extend(
+        [
+            "-an",
+            "-f",
+            "mp4",
+            "-movflags",
+            "+frag_keyframe+empty_moov",
+            "pipe:1",
+        ]
+    )
+
+    original_size = len(data)
+    try:
+        result = subprocess.run(
+            cmd,
+            input=data,
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode(errors="replace")[:500]
+            logger.warning(
+                "ffmpeg preprocessing failed (rc=%d): %s. Using original video bytes.",
+                result.returncode,
+                stderr,
+            )
+            return data
+
+        preprocessed = result.stdout
+        logger.info(
+            "Video preprocessed: %d bytes -> %d bytes "
+            "(max_height=%d, max_width=%d, codec=%s)",
+            original_size,
+            len(preprocessed),
+            max_height,
+            max_width,
+            force_codec or "copy",
+        )
+        return preprocessed
+    except subprocess.TimeoutExpired:
+        logger.warning("ffmpeg preprocessing timed out. Using original video bytes.")
+        return data
+    except Exception as e:
+        logger.warning("ffmpeg preprocessing error: %s. Using original video bytes.", e)
+        return data
 
 
 class VideoLoader:

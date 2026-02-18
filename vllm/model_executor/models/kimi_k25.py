@@ -169,6 +169,16 @@ class KimiK25ProcessingInfo(BaseProcessingInfo):
     images and video-chunks.
     """
 
+    # media_proc_cfg keys that can be overridden via --mm-processor-kwargs
+    _OVERRIDABLE_MEDIA_CFG_KEYS = {
+        "in_patch_limit",
+        "in_patch_limit_each_frame",
+        "in_patch_limit_video",
+        "max_num_frames_each_video",
+        "patch_limit_on_one_side",
+        "sample_fps",
+    }
+
     def __init__(self, ctx: InputProcessingContext) -> None:
         super().__init__(ctx)
         self.hf_config = self.get_hf_config()
@@ -176,6 +186,21 @@ class KimiK25ProcessingInfo(BaseProcessingInfo):
         media_processor = cached_get_image_processor(
             self.ctx.model_config.model, trust_remote_code=True
         )
+
+        # Allow --mm-processor-kwargs to override media_proc_cfg values
+        mm_kwargs = self.ctx.model_config.mm_processor_kwargs or {}
+        cfg = media_processor.media_proc_cfg
+        for key in self._OVERRIDABLE_MEDIA_CFG_KEYS:
+            if key in mm_kwargs:
+                old_val = cfg.get(key)
+                cfg[key] = mm_kwargs[key]
+                logger.info(
+                    "Kimi-K2.5: media_proc_cfg[%s] overridden: %s -> %s",
+                    key,
+                    old_val,
+                    mm_kwargs[key],
+                )
+
         self.media_processor = media_processor
         self.hf_processor = MoonshotKimiVAutoProcessor(
             media_processor=self.media_processor,

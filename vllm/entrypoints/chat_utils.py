@@ -593,7 +593,13 @@ def _resolve_vision_chunk_items(
                     video_uuid = uuid or random_uuid()
                     # video await result is (video_data, video_meta) tuple
                     if isinstance(data, tuple) and len(data) >= 1:
-                        video_data = data[0]
+                        frames_or_bytes = data[0]
+                        metadata = data[1] if len(data) > 1 else {}
+                        # Use preprocessed bytes if available (for models
+                        # like Kimi that need raw bytes for their decoder)
+                        video_data = metadata.get(
+                            "preprocessed_video_bytes", frames_or_bytes
+                        )
                     else:
                         video_data = data
                     video_chunks = mm_processor.split_video_chunks(video_data)

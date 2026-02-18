@@ -219,7 +219,16 @@ class MoonVision3dPatchEmbed(nn.Module):
             raise NotImplementedError(f"Not support pos_emb_type: {pos_emb_type}")
 
     def forward(self, x: torch.Tensor, grid_thws: torch.Tensor) -> torch.Tensor:
-        x = self.proj(x).view(x.size(0), -1)
+        # Chunk large batches to avoid cuDNN workspace OOM in Conv2d
+        _CONV_CHUNK = 4096
+        if x.size(0) > _CONV_CHUNK:
+            chunks = [
+                self.proj(chunk).view(chunk.size(0), -1)
+                for chunk in x.split(_CONV_CHUNK)
+            ]
+            x = torch.cat(chunks, dim=0)
+        else:
+            x = self.proj(x).view(x.size(0), -1)
         # apply positional embedding
         x = self.pos_emb(x, grid_thws)
         return x
