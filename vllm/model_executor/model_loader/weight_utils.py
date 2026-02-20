@@ -543,15 +543,6 @@ def download_weights_from_hf(
                 time_taken,
             )
 
-    # Verify HF cache integrity after download, before loading.
-    from vllm.utils.hf_cache_verify import verify_model_cache
-
-    verify_model_cache(
-        model=model_name_or_path,
-        revision=revision,
-        download_dir=cache_dir,
-    )
-
     return hf_folder
 
 

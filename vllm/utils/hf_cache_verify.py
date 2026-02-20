@@ -134,28 +134,41 @@ def _fetch_repo_info_from_proxy(
         return json.loads(resp.read().decode())
 
 
+def _is_hf_offline_mode() -> bool:
+    """Check if HuggingFace offline mode is enabled."""
+    return os.environ.get("HF_HUB_OFFLINE", "0") in ("1", "true", "True")
+
+
 def _get_repo_info(
     repo_id: str,
     revision: str,
     hf_token: str | None = None,
 ) -> dict:
     """Get repo info from HF directly, falling back to chutes proxy."""
-    # Try HuggingFace directly first.
+    # Skip HF direct if offline mode is enabled — go straight to proxy.
     hf_error = None
-    try:
+    if _is_hf_offline_mode():
         logger.info(
-            "Fetching repo info from HuggingFace for %s@%s",
+            "HF offline mode detected, using chutes proxy for %s@%s",
             repo_id,
             revision,
         )
-        return _fetch_repo_info_from_hf(repo_id, revision, hf_token)
-    except Exception as e:
-        hf_error = e
-        logger.warning(
-            "Failed to fetch repo info from HuggingFace directly: %s. "
-            "Falling back to chutes proxy.",
-            e,
-        )
+    else:
+        # Try HuggingFace directly first.
+        try:
+            logger.info(
+                "Fetching repo info from HuggingFace for %s@%s",
+                repo_id,
+                revision,
+            )
+            return _fetch_repo_info_from_hf(repo_id, revision, hf_token)
+        except Exception as e:
+            hf_error = e
+            logger.warning(
+                "Failed to fetch repo info from HuggingFace directly: %s. "
+                "Falling back to chutes proxy.",
+                e,
+            )
 
     # Fallback: chutes proxy.
     try:
@@ -487,9 +500,9 @@ def verify_model_cache(
     repo_id = model
     cache_dir = download_dir
 
-    if os.path.isdir(model):
-        # The model path is a local directory. Check if it's an HF cache
-        # snapshot path (e.g. offline mode resolves to
+    if os.path.isabs(model) and os.path.isdir(model):
+        # The model path is an absolute local directory. Check if it's an
+        # HF cache snapshot path (e.g. offline mode resolves to
         # /cache/hub/models--org--name/snapshots/{hash}) — if so, parse
         # out the repo_id and revision so we can still verify.
         parsed = _parse_hf_cache_path(model)

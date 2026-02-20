@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import os
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -100,6 +101,22 @@ class Executor(ABC):
         self.device_config = vllm_config.device_config
         self.speculative_config = vllm_config.speculative_config
         self.observability_config = vllm_config.observability_config
+
+        # Verify HF cache integrity once in the parent process before
+        # spawning workers, so DP/TP workers don't redundantly re-verify.
+        # Only skip for absolute local paths — relative paths like
+        # "org/model" could be HF repo IDs where a local dir was planted
+        # to bypass verification.
+        model = self.model_config.model
+        if not (os.path.isabs(model) and os.path.isdir(model)):
+            from vllm.utils.hf_cache_verify import verify_model_cache
+
+            verify_model_cache(
+                model=model,
+                revision=self.model_config.revision,
+                download_dir=self.load_config.download_dir,
+            )
+
         self._init_executor()
         self.is_sleeping = False
         self.sleeping_tags: set[str] = set()
