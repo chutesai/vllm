@@ -75,6 +75,7 @@ class UsageInfo(OpenAIBaseModel):
     prompt_tokens: int = 0
     total_tokens: int = 0
     completion_tokens: int | None = 0
+    reasoning_tokens: int | None = None
     prompt_tokens_details: PromptTokenUsageInfo | None = None
 
 
@@ -236,7 +237,8 @@ class DeltaMessage(OpenAIBaseModel):
     @model_validator(mode="after")
     def handle_deprecated_reasoning_content(self):
         """Copy reasoning to reasoning_content for backward compatibility."""
-        self.reasoning_content = self.reasoning
+        if self.reasoning is not None:
+            self.reasoning_content = self.reasoning
         return self
 
 

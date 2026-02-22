@@ -986,6 +986,17 @@ class OpenAIServingChat(OpenAIServing):
                         )
                     # handle streaming deltas for tools with named tool_choice
                     elif tool_choice_function_name:
+                        # When encountering think end id in prompt_token_ids
+                        # i.e {"enable_thinking": False},
+                        # check BEFORE calling the parser to avoid a spurious
+                        # reasoning delta on the first chunk.
+                        if (
+                            reasoning_parser
+                            and not reasoning_end_arr[i]
+                            and prompt_is_reasoning_end_arr[i]
+                        ):
+                            reasoning_end_arr[i] = True
+
                         if (
                             reasoning_parser
                             and not reasoning_end_arr[i]
@@ -1005,16 +1016,11 @@ class OpenAIServingChat(OpenAIServing):
                                     output.token_ids,
                                 )
                             )
-                            # When encountering think end id in delta_token_ids
-                            # or think end id in prompt_token_ids
-                            # i.e {"enable_thinking": False},
+                            # When encountering think end id in delta_token_ids,
                             # set reasoning status to end.
                             # Only keep 'content', remove 'reasoning'.
-                            if (
-                                reasoning_parser.is_reasoning_end(
-                                    as_list(output.token_ids)
-                                )
-                                or prompt_is_reasoning_end_arr[i]
+                            if reasoning_parser.is_reasoning_end(
+                                as_list(output.token_ids)
                             ):
                                 reasoning_end_arr[i] = True
                                 if delta_message and delta_message.content:
@@ -1205,14 +1211,23 @@ class OpenAIServingChat(OpenAIServing):
 
                     # when only reasoning
                     elif reasoning_parser:
-                        delta_message = reasoning_parser.extract_reasoning_streaming(
-                            previous_text,
-                            current_text,
-                            delta_text,
-                            previous_token_ids,
-                            current_token_ids,
-                            output.token_ids,
-                        )
+                        # When encountering think end id in prompt_token_ids
+                        # i.e {"enable_thinking": False},
+                        # set reasoning status to end.
+                        # Route all generated tokens as content directly.
+                        if prompt_is_reasoning_end_arr[i]:
+                            delta_message = DeltaMessage(content=delta_text)
+                        else:
+                            delta_message = (
+                                reasoning_parser.extract_reasoning_streaming(
+                                    previous_text,
+                                    current_text,
+                                    delta_text,
+                                    previous_token_ids,
+                                    current_token_ids,
+                                    output.token_ids,
+                                )
+                            )
                         # Only count as reasoning tokens if delta has reasoning
                         is_reasoning = (
                             delta_message is not None

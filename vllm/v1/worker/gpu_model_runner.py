@@ -3786,15 +3786,14 @@ class GPUModelRunner(
 
             if req_ids_needing_hidden_states:
                 hidden_states_dict = {}
-                # Move to CPU and convert to list for serialization
-                sample_hidden_states_cpu = sample_hidden_states.cpu()
                 for req_id in req_ids_needing_hidden_states:
                     if req_id in req_id_to_index_output_copy:
                         idx = req_id_to_index_output_copy[req_id]
-                        if idx < sample_hidden_states_cpu.shape[0]:
-                            # Store as list of list (single hidden state)
+                        if idx < sample_hidden_states.shape[0]:
+                            # Index first, then move to CPU to avoid
+                            # transferring the entire batch's hidden states
                             hidden_states_dict[req_id] = [
-                                sample_hidden_states_cpu[idx].tolist()
+                                sample_hidden_states[idx].cpu().tolist()
                             ]
 
         with record_function_or_nullcontext("gpu_model_runner: ModelRunnerOutput"):
@@ -4800,34 +4799,39 @@ class GPUModelRunner(
             ubatch_slices=ubatch_slices_padded,
         )
 
-        # If force_attention is True, we always capture attention. Otherwise,
-        # it only happens for cudagraph_runtime_mode=FULL.
-        if force_attention or cudagraph_runtime_mode == CUDAGraphMode.FULL:
-            if create_mixed_batch:
-                # In the mixed batch mode (used for FI warmup), we use
-                # shorter sequence lengths to run faster.
-                # TODO(luka) better system for describing dummy batches
-                seq_lens = [1] * num_decode_tokens + [num_prefill_tokens + 1]
-            else:
-                seq_lens = max_query_len  # type: ignore[assignment]
-            self.seq_lens.np[:num_reqs] = seq_lens
-            self.seq_lens.np[num_reqs:] = 0
-            self.seq_lens.copy_to_gpu()
+        # _dummy_run shares pinned CPU buffers (seq_lens, query_start_loc,
+        # etc.) with execute_model.  It must participate in the same event
+        # protocol so that back-to-back dummy/real steps don't overwrite
+        # pinned memory while a prior non_blocking H2D DMA is still reading.
+        with self.synchronize_input_prep():
+            # If force_attention is True, we always capture attention.
+            # Otherwise, it only happens for cudagraph_runtime_mode=FULL.
+            if force_attention or cudagraph_runtime_mode == CUDAGraphMode.FULL:
+                if create_mixed_batch:
+                    # In the mixed batch mode (used for FI warmup), we use
+                    # shorter sequence lengths to run faster.
+                    # TODO(luka) better system for describing dummy batches
+                    seq_lens = [1] * num_decode_tokens + [num_prefill_tokens + 1]
+                else:
+                    seq_lens = max_query_len  # type: ignore[assignment]
+                self.seq_lens.np[:num_reqs] = seq_lens
+                self.seq_lens.np[num_reqs:] = 0
+                self.seq_lens.copy_to_gpu()
 
-            cum_num_tokens, _ = self._get_cumsum_and_arange(num_scheduled_tokens)
-            self.query_start_loc.np[1 : num_reqs + 1] = cum_num_tokens
-            self.query_start_loc.copy_to_gpu()
+                cum_num_tokens, _ = self._get_cumsum_and_arange(num_scheduled_tokens)
+                self.query_start_loc.np[1 : num_reqs + 1] = cum_num_tokens
+                self.query_start_loc.copy_to_gpu()
 
-            pad_attn = cudagraph_runtime_mode == CUDAGraphMode.FULL
-            attn_metadata, _ = self._build_attention_metadata(
-                num_tokens=num_tokens_unpadded,
-                num_tokens_padded=num_tokens_padded if pad_attn else None,
-                num_reqs=num_reqs_padded,
-                max_query_len=max_query_len,
-                ubatch_slices=ubatch_slices_padded if pad_attn else ubatch_slices,
-                for_cudagraph_capture=is_graph_capturing,
-                slot_mappings=slot_mappings_by_group,
-            )
+                pad_attn = cudagraph_runtime_mode == CUDAGraphMode.FULL
+                attn_metadata, _ = self._build_attention_metadata(
+                    num_tokens=num_tokens_unpadded,
+                    num_tokens_padded=num_tokens_padded if pad_attn else None,
+                    num_reqs=num_reqs_padded,
+                    max_query_len=max_query_len,
+                    ubatch_slices=(ubatch_slices_padded if pad_attn else ubatch_slices),
+                    for_cudagraph_capture=is_graph_capturing,
+                    slot_mappings=slot_mappings_by_group,
+                )
 
         with self.maybe_dummy_run_with_lora(
             self.lora_config,
