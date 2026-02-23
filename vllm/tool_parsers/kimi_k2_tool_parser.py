@@ -2,10 +2,12 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # code modified from deepseekv3_tool_parser.py
 
+import json
 from collections.abc import Sequence
 
 import regex as re
 
+import vllm.envs as envs
 from vllm.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
@@ -24,6 +26,106 @@ from vllm.tool_parsers.abstract_tool_parser import (
 )
 
 logger = init_logger(__name__)
+
+# Pattern for valid tool call IDs: "functions.name:idx" or "name:idx"
+# Function names are word chars and dots (for namespaced functions)
+_TOOL_ID_PATTERN = r"(?:functions\.)?(?P<function_name>[\w.]+):(?P<function_idx>\d+)"
+
+# All known Kimi K2 special markers — used for content sanitization
+_ALL_MARKERS = [
+    "<|tool_calls_section_begin|>",
+    "<|tool_calls_section_end|>",
+    "<|tool_call_section_begin|>",
+    "<|tool_call_section_end|>",
+    "<|tool_call_begin|>",
+    "<|tool_call_end|>",
+    "<|tool_call_argument_begin|>",
+]
+
+
+def _try_parse_json(s: str) -> str:
+    """
+    Attempt to parse JSON string, repairing if necessary.
+    Returns the (possibly repaired) JSON string, or the original if
+    parsing fails entirely.
+    """
+    s = s.strip()
+    if not s:
+        return s
+    try:
+        # Fast path: valid JSON
+        json.loads(s)
+        return s
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt repair: try closing unclosed braces/brackets
+    # This handles the most common model errors without adding a dependency
+    open_braces = s.count("{") - s.count("}")
+    open_brackets = s.count("[") - s.count("]")
+    if open_braces > 0 or open_brackets > 0:
+        repaired = s + "]" * open_brackets + "}" * open_braces
+        try:
+            json.loads(repaired)
+            logger.debug(
+                "Repaired JSON by closing %d braces, %d brackets",
+                open_braces,
+                open_brackets,
+            )
+            return repaired
+        except json.JSONDecodeError:
+            pass
+
+    # Try stripping trailing comma before closing brace (common model error)
+    stripped = re.sub(r",\s*([}\]])", r"\1", s)
+    if stripped != s:
+        try:
+            json.loads(stripped)
+            logger.debug("Repaired JSON by removing trailing commas")
+            return stripped
+        except json.JSONDecodeError:
+            pass
+
+    # Combined: strip trailing comma at end of content, then close braces.
+    # Handles: '{"a": 1, "b": 2,' → '{"a": 1, "b": 2}'
+    if open_braces > 0 or open_brackets > 0:
+        # Strip trailing comma (possibly followed by whitespace) at end of string
+        combo = re.sub(r",\s*$", "", s)
+        combo = combo + "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+        try:
+            json.loads(combo)
+            logger.debug("Repaired JSON by stripping trailing comma and closing braces")
+            return combo
+        except json.JSONDecodeError:
+            pass
+
+    logger.warning("Could not parse or repair JSON: %s", s[:200])
+    return s
+
+
+def _get_tool_names_from_request(
+    request: ChatCompletionRequest | None,
+) -> set[str] | None:
+    """Extract valid tool/function names from the request, if available."""
+    if request is None or not hasattr(request, "tools") or not request.tools:
+        return None
+    names: set[str] = set()
+    for tool in request.tools:
+        if hasattr(tool, "function") and hasattr(tool.function, "name"):
+            names.add(tool.function.name)
+    return names if names else None
+
+
+def _sanitize_content(content: str) -> str:
+    """
+    Strip any leaked Kimi K2 special markers from content text.
+    This is a safety net — if the regex or streaming logic fails to
+    fully consume a marker, we don't want it reaching the user.
+    """
+    for marker in _ALL_MARKERS:
+        if marker in content:
+            content = content.replace(marker, "")
+    return content
 
 
 class KimiK2ToolParser(ToolParser):
@@ -59,13 +161,28 @@ class KimiK2ToolParser(ToolParser):
         self.tool_call_start_token: str = "<|tool_call_begin|>"
         self.tool_call_end_token: str = "<|tool_call_end|>"
 
+        # Non-streaming regex: anchored to known end tokens.
+        # Captures everything between argument_begin and the next end token
+        # (not requiring balanced braces — _try_parse_json handles repair).
         self.tool_call_regex = re.compile(
-            r"<\|tool_call_begin\|>\s*(?P<tool_call_id>[^<]+:\d+)\s*<\|tool_call_argument_begin\|>\s*(?P<function_arguments>(?:(?!<\|tool_call_begin\|>).)*?)\s*<\|tool_call_end\|>",
+            r"<\|tool_call_begin\|>\s*"
+            r"(?P<tool_call_id>" + _TOOL_ID_PATTERN + r")\s*"
+            r"<\|tool_call_argument_begin\|>\s*"
+            r"(?P<function_arguments>.*?)\s*"
+            r"(?:<\|tool_call_end\|>"
+            r"|<\|tool_call_begin\|>"
+            r"|<\|tool_calls_section_end\|>"
+            r"|<\|tool_call_section_end\|>"
+            r"|$)",
             re.DOTALL,
         )
 
+        # Streaming regexes: [^<]+ prevents greedy matching across markers
         self.stream_tool_call_portion_regex = re.compile(
-            r"(?P<tool_call_id>[^<]+:\d+)\s*<\|tool_call_argument_begin\|>\s*(?P<function_arguments>.*)"
+            r"(?P<tool_call_id>[^<]+:\d+)\s*"
+            r"<\|tool_call_argument_begin\|>\s*"
+            r"(?P<function_arguments>.*)",
+            re.DOTALL,
         )
 
         self.stream_tool_call_name_regex = re.compile(r"(?P<tool_call_id>[^<]+:\d+)\s*")
@@ -162,19 +279,31 @@ class KimiK2ToolParser(ToolParser):
 
         else:
             try:
-                # there are two possible captures - between tags, or between a
-                # tag and end-of-string so the result of
-                # findall is an array of tuples where one is a function call and
-                # the other is None
-                function_call_tuples = self.tool_call_regex.findall(model_output)
-
-                logger.debug("function_call_tuples: %s", function_call_tuples)
+                # Get valid tool names for validation (if available)
+                valid_tools = _get_tool_names_from_request(request)
 
                 tool_calls = []
-                for match in function_call_tuples:
-                    function_id, function_args = match
-                    # function_id: functions.get_weather:0 or get_weather:0
-                    function_name = function_id.split(":")[0].split(".")[-1]
+                for match in self.tool_call_regex.finditer(
+                    model_output,
+                    timeout=envs.VLLM_TOOL_PARSE_REGEX_TIMEOUT_SECONDS,
+                ):
+                    function_name = match.group("function_name")
+                    function_id = match.group("tool_call_id").strip()
+                    raw_args = match.group("function_arguments").strip()
+
+                    # Validate function name against request tools
+                    if valid_tools and function_name not in valid_tools:
+                        logger.warning(
+                            "Model called undefined function '%s', "
+                            "available tools: %s. Skipping.",
+                            function_name,
+                            valid_tools,
+                        )
+                        continue
+
+                    # Attempt to parse/repair JSON arguments
+                    function_args = _try_parse_json(raw_args)
+
                     tool_calls.append(
                         ToolCall(
                             id=function_id,
@@ -185,6 +314,8 @@ class KimiK2ToolParser(ToolParser):
                         )
                     )
 
+                logger.debug("Extracted %d tool calls", len(tool_calls))
+
                 # Find the earliest section begin marker
                 content_end = len(model_output)
                 for variant in self.tool_calls_start_token_variants:
@@ -192,16 +323,39 @@ class KimiK2ToolParser(ToolParser):
                     if idx != -1 and idx < content_end:
                         content_end = idx
                 content = model_output[:content_end]
+
+                # Sanitize content: strip any leaked markers
+                content = _sanitize_content(content)
+
+                # If section markers were found but no tool calls matched,
+                # still report tools_called=True with empty list so the
+                # serving layer knows not to return raw markers as content
                 return ExtractedToolCallInformation(
                     tools_called=True,
                     tool_calls=tool_calls,
                     content=content if content else None,
                 )
 
+            except TimeoutError:
+                logger.warning(
+                    "Regex timeout in extract_tool_calls after %ds. "
+                    "Input length: %d chars.",
+                    envs.VLLM_TOOL_PARSE_REGEX_TIMEOUT_SECONDS,
+                    len(model_output),
+                )
+                # Sanitize before returning to avoid marker leakage
+                return ExtractedToolCallInformation(
+                    tools_called=False,
+                    tool_calls=[],
+                    content=_sanitize_content(model_output),
+                )
             except Exception:
                 logger.exception("Error in extracting tool call from response.")
+                # Sanitize before returning to avoid marker leakage
                 return ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=model_output
+                    tools_called=False,
+                    tool_calls=[],
+                    content=_sanitize_content(model_output),
                 )
 
     def extract_tool_calls_streaming(
@@ -216,6 +370,17 @@ class KimiK2ToolParser(ToolParser):
     ) -> DeltaMessage | None:
         logger.debug("delta_text: %s", delta_text)
         logger.debug("delta_token_ids: %s", delta_token_ids)
+
+        # Auto-reset: if this is the first delta of a new request and we
+        # have stale state from a previous (possibly aborted) stream, reset.
+        if not previous_text and (self.current_tool_id != -1 or self.in_tool_section):
+            logger.warning(
+                "Stale streaming state detected at start of new request. "
+                "Auto-resetting. (current_tool_id=%d, in_tool_section=%s)",
+                self.current_tool_id,
+                self.in_tool_section,
+            )
+            self.reset_streaming_state()
 
         # Flag to defer section exit until after tool parsing completes
         deferred_section_exit = False
@@ -270,6 +435,8 @@ class KimiK2ToolParser(ToolParser):
                         if len(parts) > 1:
                             post_section_content = parts[1]
                         break
+                # Sanitize any leaked markers in post-section content
+                post_section_content = _sanitize_content(post_section_content)
                 if post_section_content.strip():
                     return DeltaMessage(content=post_section_content)
                 return DeltaMessage(content="")
@@ -285,14 +452,14 @@ class KimiK2ToolParser(ToolParser):
         if not has_section_token and not self.in_tool_section:
             logger.debug("No tool call tokens found!")
             # Don't clear buffer - it needs to accumulate partial markers across deltas
-            # Buffer overflow is already protected by lines 215-224
+            # Buffer overflow is already protected above
             return DeltaMessage(content=delta_text)
 
         # Strip section markers from delta_text for subsequent processing
         # NOTE: This preprocessing happens BEFORE the regex-based tool call
-        # parsing (from PR #24847) to ensure markers are removed cleanly
-        # before pattern matching. No double-stripping occurs because
-        # section markers and tool call markers are distinct.
+        # parsing to ensure markers are removed cleanly before pattern matching.
+        # No double-stripping occurs because section markers and tool call
+        # markers are distinct.
         delta_text, _, _ = self._check_and_strip_markers(delta_text)
 
         try:

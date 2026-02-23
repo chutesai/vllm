@@ -277,7 +277,7 @@ def test_extract_tool_calls(
 
 
 def test_extract_tool_calls_invalid_json(kimi_k2_tool_parser):
-    """we'll return every funcall result"""
+    """Invalid JSON (missing closing brace) should be repaired via _try_parse_json."""
     model_output = """I'll help you check the weather. <|tool_calls_section_begin|> <|tool_call_begin|>
 functions.invalid_get_weather:0 <|tool_call_argument_begin|> {"city": "Beijing" <|tool_call_end|> <|tool_call_begin|>
 functions.valid_get_weather:1 <|tool_call_argument_begin|> {"city": "Shanghai"} <|tool_call_end|> <|tool_calls_section_end|>"""
@@ -287,9 +287,12 @@ functions.valid_get_weather:1 <|tool_call_argument_begin|> {"city": "Shanghai"} 
     )  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
-    # Should extract only the valid JSON tool calls
+    # Both tool calls should be extracted — the first has its JSON repaired
     assert len(extracted_tool_calls.tool_calls) == 2
     assert extracted_tool_calls.tool_calls[0].function.name == "invalid_get_weather"
+    # The repaired JSON should be valid
+    parsed_args = json.loads(extracted_tool_calls.tool_calls[0].function.arguments)
+    assert parsed_args == {"city": "Beijing"}
     assert extracted_tool_calls.tool_calls[1].function.name == "valid_get_weather"
 
 
@@ -1227,3 +1230,438 @@ def test_extract_tool_calls_concatenated_no_spaces(kimi_k2_tool_parser):
     assert result.tool_calls[1].function.name == "func_b"
     assert json.loads(result.tool_calls[0].function.arguments) == {"x": 1}
     assert json.loads(result.tool_calls[1].function.arguments) == {"y": 2}
+
+
+def test_extract_tool_calls_json_repair_trailing_comma(kimi_k2_tool_parser):
+    """
+    Test that the parser can repair common JSON errors from model output,
+    such as trailing commas before closing braces.
+    """
+    model_output = (
+        "Here you go. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:0"
+        '<|tool_call_argument_begin|>{"city": "Tokyo",}'  # trailing comma
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    # Should have repaired the trailing comma
+    parsed = json.loads(result.tool_calls[0].function.arguments)
+    assert parsed == {"city": "Tokyo"}
+
+
+def test_extract_tool_calls_json_repair_unclosed_brace(kimi_k2_tool_parser):
+    """
+    Test that the parser can repair unclosed braces in JSON arguments.
+    Models sometimes fail to close nested objects.
+    """
+    model_output = (
+        "Running. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.update:0"
+        '<|tool_call_argument_begin|>{"data": {"key": "value"}'  # missing outer }
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    parsed = json.loads(result.tool_calls[0].function.arguments)
+    assert parsed == {"data": {"key": "value"}}
+
+
+def test_extract_tool_calls_validates_function_names(kimi_k2_tool_parser):
+    """
+    Test that when tools are provided in the request, the parser validates
+    function names and skips calls to undefined functions.
+    Inspired by SGLang's tool validation approach.
+    """
+    from unittest.mock import MagicMock
+
+    # Create a mock request with specific tools
+    mock_request = MagicMock()
+    tool1 = MagicMock()
+    tool1.function.name = "get_weather"
+    tool2 = MagicMock()
+    tool2.function.name = "get_news"
+    mock_request.tools = [tool1, tool2]
+
+    model_output = (
+        "Let me help. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:0"
+        '<|tool_call_argument_begin|>{"city": "Tokyo"}'
+        "<|tool_call_end|>"
+        "<|tool_call_begin|>functions.hack_system:1"  # hallucinated function
+        '<|tool_call_argument_begin|>{"target": "server"}'
+        "<|tool_call_end|>"
+        "<|tool_call_begin|>functions.get_news:2"
+        '<|tool_call_argument_begin|>{"topic": "tech"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=mock_request)
+    assert result.tools_called
+    # Should have skipped the hallucinated "hack_system" call
+    assert len(result.tool_calls) == 2
+    assert result.tool_calls[0].function.name == "get_weather"
+    assert result.tool_calls[1].function.name == "get_news"
+
+
+def test_extract_tool_calls_no_validation_without_tools(kimi_k2_tool_parser):
+    """
+    When no tools are specified in the request, all function calls should
+    be accepted without validation.
+    """
+    model_output = (
+        "Here. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.any_function:0"
+        '<|tool_call_argument_begin|>{"x": 1}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].function.name == "any_function"
+
+
+def test_extract_tool_calls_named_groups_in_regex(kimi_k2_tool_parser):
+    """
+    Test that the regex correctly extracts function_name and function_idx
+    as separate named groups for both prefixed and unprefixed formats.
+    """
+    # With "functions." prefix
+    model_output1 = (
+        "Test. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.my_tool:0"
+        '<|tool_call_argument_begin|>{"a": 1}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result1 = kimi_k2_tool_parser.extract_tool_calls(model_output1, request=None)
+    assert result1.tools_called
+    assert result1.tool_calls[0].function.name == "my_tool"
+
+    # Without "functions." prefix (some models omit it)
+    model_output2 = (
+        "Test. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>my_tool:0"
+        '<|tool_call_argument_begin|>{"a": 1}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result2 = kimi_k2_tool_parser.extract_tool_calls(model_output2, request=None)
+    assert result2.tools_called
+    assert result2.tool_calls[0].function.name == "my_tool"
+
+
+def test_extract_tool_calls_incomplete_without_end_token(kimi_k2_tool_parser):
+    """
+    Test that tool calls without a proper end token (truncated output)
+    are still extracted via the $ anchor in the regex.
+    Adopted from SGLang's approach.
+    """
+    # Model output truncated — no tool_call_end or section_end
+    model_output = (
+        "Working. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.search:0"
+        '<|tool_call_argument_begin|>{"query": "test"}'
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].function.name == "search"
+    parsed = json.loads(result.tool_calls[0].function.arguments)
+    assert parsed == {"query": "test"}
+
+
+def test_extract_tool_calls_nested_json(kimi_k2_tool_parser):
+    """
+    Test that deeply nested JSON is correctly extracted by the non-greedy
+    regex anchored to end tokens (not stopping at the first '}').
+    """
+    nested_args = json.dumps(
+        {
+            "config": {
+                "settings": {
+                    "theme": {"primary": "#fff", "secondary": "#000"},
+                    "flags": [True, False],
+                },
+                "metadata": {"version": 2},
+            }
+        }
+    )
+
+    model_output = (
+        "Configuring. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.configure:0"
+        f"<|tool_call_argument_begin|>{nested_args}"
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    parsed = json.loads(result.tool_calls[0].function.arguments)
+    assert parsed["config"]["settings"]["theme"]["primary"] == "#fff"
+    assert parsed["config"]["metadata"]["version"] == 2
+
+
+# ============================================================
+# Robustness and fault-tolerance tests
+# ============================================================
+
+
+def test_content_sanitization_on_parse_failure(kimi_k2_tool_parser):
+    """
+    When extract_tool_calls encounters an error and falls back, the
+    returned content should NOT contain any Kimi K2 special markers.
+    This prevents marker leakage to the end user.
+    """
+    # Craft input where section markers exist but tool call regex won't match
+    # (invalid tool call format — no colon in ID)
+    model_output = (
+        "Here's the result. "
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>badformat_no_colon"
+        "<|tool_call_argument_begin|>{}"
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    # Whether or not tool calls were found, content must be clean
+    if result.content:
+        from vllm.tool_parsers.kimi_k2_tool_parser import _ALL_MARKERS
+
+        for marker in _ALL_MARKERS:
+            assert marker not in result.content, (
+                f"MARKER LEAK: '{marker}' found in content: {result.content!r}"
+            )
+
+
+def test_content_sanitization_strips_all_marker_types(kimi_k2_tool_parser):
+    """
+    Test that _sanitize_content strips every known marker type.
+    """
+    from vllm.tool_parsers.kimi_k2_tool_parser import _sanitize_content
+
+    dirty = (
+        "Hello <|tool_calls_section_begin|> world "
+        "<|tool_call_begin|> foo <|tool_call_argument_begin|> "
+        "<|tool_call_end|> bar <|tool_calls_section_end|>"
+        "<|tool_call_section_begin|><|tool_call_section_end|>"
+    )
+    clean = _sanitize_content(dirty)
+    assert "<|" not in clean
+    assert "Hello" in clean
+    assert "world" in clean
+    assert "foo" in clean
+    assert "bar" in clean
+
+
+def test_streaming_auto_reset_on_stale_state(kimi_k2_tool_parser):
+    """
+    If a previous stream was aborted (e.g. client disconnect) and the
+    parser is reused for a new request, stale state should be auto-reset
+    when previous_text is empty (start of new request).
+    """
+    # Simulate stale state from a previous aborted stream
+    kimi_k2_tool_parser.current_tool_id = 3
+    kimi_k2_tool_parser.in_tool_section = True
+    kimi_k2_tool_parser.prev_tool_call_arr = [{"name": "stale"}]
+    kimi_k2_tool_parser.streamed_args_for_tool = ["stale"]
+
+    # New request starts: previous_text="" indicates fresh start
+    result = kimi_k2_tool_parser.extract_tool_calls_streaming(
+        previous_text="",
+        current_text="Hello",
+        delta_text="Hello",
+        previous_token_ids=[],
+        current_token_ids=[1, 2],
+        delta_token_ids=[1, 2],
+        request=None,
+    )
+
+    # State should have been auto-reset
+    assert kimi_k2_tool_parser.current_tool_id == -1
+    assert kimi_k2_tool_parser.in_tool_section is False
+    assert kimi_k2_tool_parser.prev_tool_call_arr == []
+    assert kimi_k2_tool_parser.streamed_args_for_tool == []
+
+    # Content should flow through normally
+    assert result is not None
+    assert result.content == "Hello"
+
+
+def test_streaming_no_false_reset_on_continuation(kimi_k2_tool_parser):
+    """
+    Auto-reset should NOT trigger when previous_text is non-empty
+    (i.e., we're mid-stream, not starting fresh).
+    """
+    kimi_k2_tool_parser.reset_streaming_state()
+
+    section_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_begin|>")
+
+    # First delta: enters tool section (sets state)
+    kimi_k2_tool_parser.extract_tool_calls_streaming(
+        previous_text="",
+        current_text="<|tool_calls_section_begin|>",
+        delta_text="<|tool_calls_section_begin|>",
+        previous_token_ids=[],
+        current_token_ids=[section_begin_id],
+        delta_token_ids=[section_begin_id],
+        request=None,
+    )
+    assert kimi_k2_tool_parser.in_tool_section is True
+
+    # Second delta: continuation (previous_text is non-empty)
+    # Auto-reset should NOT fire here
+    kimi_k2_tool_parser.extract_tool_calls_streaming(
+        previous_text="<|tool_calls_section_begin|>",
+        current_text="<|tool_calls_section_begin|> data",
+        delta_text=" data",
+        previous_token_ids=[section_begin_id],
+        current_token_ids=[section_begin_id, 10],
+        delta_token_ids=[10],
+        request=None,
+    )
+    # Should still be in tool section (not falsely reset)
+    assert kimi_k2_tool_parser.in_tool_section is True
+
+
+def test_json_repair_trailing_comma_and_unclosed_brace(kimi_k2_tool_parser):
+    """
+    Test combined JSON repair: trailing comma AND unclosed brace together.
+    """
+    from vllm.tool_parsers.kimi_k2_tool_parser import _try_parse_json
+
+    # Trailing comma + missing closing brace
+    result = _try_parse_json('{"a": 1, "b": 2,')
+    parsed = json.loads(result)
+    assert parsed == {"a": 1, "b": 2}
+
+
+def test_json_repair_empty_string():
+    """_try_parse_json should handle empty/whitespace input gracefully."""
+    from vllm.tool_parsers.kimi_k2_tool_parser import _try_parse_json
+
+    assert _try_parse_json("") == ""
+    assert _try_parse_json("   ") == ""
+
+
+def test_json_repair_already_valid():
+    """_try_parse_json should return valid JSON unchanged."""
+    from vllm.tool_parsers.kimi_k2_tool_parser import _try_parse_json
+
+    valid = '{"key": "value", "num": 42}'
+    assert _try_parse_json(valid) == valid
+
+
+def test_extract_tool_calls_empty_section(kimi_k2_tool_parser):
+    """
+    When the model outputs section markers but no actual tool calls inside,
+    tools_called should still be True (section was detected) and content
+    should be clean with no markers.
+    """
+    model_output = (
+        "Let me think about this. "
+        "<|tool_calls_section_begin|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called is True
+    assert result.tool_calls == []
+    assert result.content == "Let me think about this. "
+
+
+def test_extract_tool_calls_only_markers_no_content(kimi_k2_tool_parser):
+    """
+    When model output is ONLY tool call markers with no reasoning content,
+    the parser should extract correctly and return None for content.
+    """
+    model_output = (
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:0"
+        '<|tool_call_argument_begin|>{"city": "Tokyo"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].function.name == "get_weather"
+    # Content should be None (no text before section begin)
+    assert result.content is None
+
+
+def test_extract_tool_calls_whitespace_only_content(kimi_k2_tool_parser):
+    """
+    When there's only whitespace before tool section, content should be None.
+    """
+    model_output = (
+        "   \n\n  "
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.do_thing:0"
+        '<|tool_call_argument_begin|>{"x": 1}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    # Whitespace-only content (after strip by caller) should still be returned
+    # as the raw whitespace — the serving layer handles stripping
+    assert result.content is not None
+
+
+def test_streaming_markers_not_leaked_in_any_content(kimi_k2_tool_parser):
+    """
+    Comprehensive marker leak test: run a full streaming sequence and
+    verify NO content delta ever contains ANY Kimi K2 marker.
+    """
+    from vllm.tool_parsers.kimi_k2_tool_parser import _ALL_MARKERS
+
+    kimi_k2_tool_parser.reset_streaming_state()
+
+    section_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_begin|>")
+    section_end_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_end|>")
+    tool_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_call_begin|>")
+    tool_end_id = kimi_k2_tool_parser.vocab.get("<|tool_call_end|>")
+
+    deltas = [
+        ("I'll check. ", [1, 2]),
+        ("<|tool_calls_section_begin|>", [section_begin_id]),
+        ("<|tool_call_begin|>", [tool_begin_id]),
+        (
+            'functions.get_weather:0 <|tool_call_argument_begin|>{"city": "NYC"}',
+            [10, 11, 12],
+        ),
+        (" <|tool_call_end|>", [tool_end_id]),
+        ("<|tool_calls_section_end|>", [section_end_id]),
+        (" Here are the results.", [20, 21]),
+    ]
+
+    all_content = []
+    results = run_streaming_sequence(kimi_k2_tool_parser, deltas)
+    for r in results:
+        if r and r.content:
+            all_content.append(r.content)
+
+    full_content = "".join(all_content)
+    for marker in _ALL_MARKERS:
+        assert marker not in full_content, (
+            f"MARKER LEAK: '{marker}' in streamed content: {full_content!r}"
+        )
