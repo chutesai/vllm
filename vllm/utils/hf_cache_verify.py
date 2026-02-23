@@ -469,11 +469,14 @@ def _parse_hf_cache_path(model_path: str) -> tuple[str, str] | None:
     """
     parts = Path(model_path).parts
     for i, part in enumerate(parts):
-        if part.startswith("models--") and i + 2 < len(parts):
-            if parts[i + 1] == "snapshots":
-                repo_id = part[len("models--") :].replace("--", "/", 1)
-                revision = parts[i + 2]
-                return repo_id, revision
+        if (
+            part.startswith("models--")
+            and i + 2 < len(parts)
+            and parts[i + 1] == "snapshots"
+        ):
+            repo_id = part[len("models--") :].replace("--", "/", 1)
+            revision = parts[i + 2]
+            return repo_id, revision
     return None
 
 

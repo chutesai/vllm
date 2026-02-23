@@ -42,8 +42,6 @@ class KimiK2ToolParser(ToolParser):
         # Buffer size: empirical worst-case for longest marker (~30 chars) * 2
         # + safety margin for unicode + partial overlap. Prevents unbounded growth.
         self.buffer_max_size: int = 1024
-        self.section_char_count: int = 0  # Track characters processed in tool section
-        self.max_section_chars: int = 8192  # Force exit if section exceeds this
         self._buffer_overflow_logged: bool = False  # Log overflow once per session
 
         # Support both singular and plural variants
@@ -67,10 +65,10 @@ class KimiK2ToolParser(ToolParser):
         )
 
         self.stream_tool_call_portion_regex = re.compile(
-            r"(?P<tool_call_id>.+:\d+)\s*<\|tool_call_argument_begin\|>\s*(?P<function_arguments>.*)"
+            r"(?P<tool_call_id>[^<]+:\d+)\s*<\|tool_call_argument_begin\|>\s*(?P<function_arguments>.*)"
         )
 
-        self.stream_tool_call_name_regex = re.compile(r"(?P<tool_call_id>.+:\d+)\s*")
+        self.stream_tool_call_name_regex = re.compile(r"(?P<tool_call_id>[^<]+:\d+)\s*")
 
         if not self.model_tokenizer:
             raise ValueError(
@@ -130,7 +128,7 @@ class KimiK2ToolParser(ToolParser):
         """Reset state when exiting tool section."""
         self.in_tool_section = False
         self.token_buffer = ""
-        self.section_char_count = 0
+        self._buffer_overflow_logged = False
 
     def reset_streaming_state(self) -> None:
         """
@@ -154,7 +152,10 @@ class KimiK2ToolParser(ToolParser):
         request: ChatCompletionRequest,
     ) -> ExtractedToolCallInformation:
         # sanity check; avoid unnecessary processing
-        if self.tool_calls_start_token not in model_output:
+        has_tool_section = any(
+            variant in model_output for variant in self.tool_calls_start_token_variants
+        )
+        if not has_tool_section:
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )
@@ -184,7 +185,13 @@ class KimiK2ToolParser(ToolParser):
                         )
                     )
 
-                content = model_output[: model_output.find(self.tool_calls_start_token)]
+                # Find the earliest section begin marker
+                content_end = len(model_output)
+                for variant in self.tool_calls_start_token_variants:
+                    idx = model_output.find(variant)
+                    if idx != -1 and idx < content_end:
+                        content_end = idx
+                content = model_output[:content_end]
                 return ExtractedToolCallInformation(
                     tools_called=True,
                     tool_calls=tool_calls,
@@ -238,7 +245,6 @@ class KimiK2ToolParser(ToolParser):
             logger.debug("Entering tool section")
             self.in_tool_section = True
             self.token_buffer = buffered_text  # Use cleaned buffer
-            self.section_char_count = 0  # Reset counter for new section
 
         if found_section_end and self.in_tool_section:
             logger.debug("Detected section end marker")
@@ -289,20 +295,6 @@ class KimiK2ToolParser(ToolParser):
         # section markers and tool call markers are distinct.
         delta_text, _, _ = self._check_and_strip_markers(delta_text)
 
-        # Error recovery: If in tool section for too long, force exit
-        if self.in_tool_section:
-            self.section_char_count += len(delta_text)
-            if self.section_char_count > self.max_section_chars:
-                logger.warning(
-                    "Tool section exceeded max length (%d chars), forcing exit. "
-                    "This may indicate malformed model output.",
-                    self.max_section_chars,
-                )
-                self._reset_section_state()
-                # Deferred exit already handled by forced exit above
-                # Return remaining content as reasoning (or empty delta if no content)
-                return DeltaMessage(content=delta_text if delta_text.strip() else "")
-
         try:
             # figure out where we are in the parsing by counting tool call
             # start & end tags
@@ -344,8 +336,8 @@ class KimiK2ToolParser(ToolParser):
                     .split(self.tool_call_end_token)[0]
                     .rstrip()
                 )
-                delta_text = delta_text.split(self.tool_call_end_token)[0].rstrip()
                 text_portion = delta_text.split(self.tool_call_end_token)[-1].lstrip()
+                delta_text = delta_text.split(self.tool_call_end_token)[0].rstrip()
 
             # case -- we're starting a new tool call
             if (
@@ -388,40 +380,53 @@ class KimiK2ToolParser(ToolParser):
                     if deferred_section_exit and self.in_tool_section:
                         self._reset_section_state()
                     return None
-                diff = self.prev_tool_call_arr[self.current_tool_id].get("arguments")
-                if diff:
-                    diff = (
-                        diff.encode("utf-8").decode("unicode_escape")
-                        if diff is str
-                        else diff
+
+                # Extract full arguments from tool_call_portion and diff
+                # against what we've already streamed
+                full_arguments = None
+                if tool_call_portion:
+                    tc_match = self.stream_tool_call_portion_regex.match(
+                        tool_call_portion
                     )
-                    if '"}' not in delta_text:
+                    if tc_match:
+                        full_arguments = tc_match.group("function_arguments")
+
+                already_streamed = (
+                    self.streamed_args_for_tool[self.current_tool_id]
+                    if self.current_tool_id < len(self.streamed_args_for_tool)
+                    else ""
+                )
+
+                if full_arguments and full_arguments.startswith(already_streamed):
+                    remaining = full_arguments[len(already_streamed) :]
+                    if remaining:
+                        logger.debug(
+                            "Finishing tool and found diff that had not "
+                            "been streamed yet: %s",
+                            remaining,
+                        )
+                        self.streamed_args_for_tool[self.current_tool_id] = (
+                            full_arguments
+                        )
                         # Handle deferred section exit before returning
                         if deferred_section_exit and self.in_tool_section:
+                            logger.debug("Completing deferred section exit")
                             self._reset_section_state()
-                        return None
-                    end_loc = delta_text.rindex('"}')
-                    diff = delta_text[:end_loc] + '"}'
-                    logger.debug(
-                        "Finishing tool and found diff that had not "
-                        "been streamed yet: %s",
-                        diff,
-                    )
-                    self.streamed_args_for_tool[self.current_tool_id] += diff
-                    # Handle deferred section exit before returning
-                    if deferred_section_exit and self.in_tool_section:
-                        logger.debug("Completing deferred section exit")
-                        self._reset_section_state()
-                    return DeltaMessage(
-                        tool_calls=[
-                            DeltaToolCall(
-                                index=self.current_tool_id,
-                                function=DeltaFunctionCall(arguments=diff).model_dump(
-                                    exclude_none=True
-                                ),
-                            )
-                        ]
-                    )
+                        return DeltaMessage(
+                            tool_calls=[
+                                DeltaToolCall(
+                                    index=self.current_tool_id,
+                                    function=DeltaFunctionCall(
+                                        arguments=remaining
+                                    ).model_dump(exclude_none=True),
+                                )
+                            ]
+                        )
+
+                # Handle deferred section exit before returning
+                if deferred_section_exit and self.in_tool_section:
+                    self._reset_section_state()
+                return None
 
             # case -- otherwise we're just generating text
             else:

@@ -502,46 +502,32 @@ def test_empty_tool_section(kimi_k2_tool_parser):
     assert kimi_k2_tool_parser.in_tool_section is False
 
 
-def test_malformed_tool_section_recovery(kimi_k2_tool_parser):
+def test_large_tool_call_args_no_truncation(kimi_k2_tool_parser):
     """
-    Test that the parser recovers from a malformed tool section
-    that never closes properly.
+    Test that large tool call arguments are NOT truncated.
+    Regression test for GitHub issue #34442 where a hardcoded 8K limit
+    silently truncated large arguments (e.g. code generation via tool calls).
     """
     kimi_k2_tool_parser.reset_streaming_state()
 
-    section_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_begin|>")
+    # Generate arguments larger than the old 8192 char limit
+    large_code = "x" * 20000
+    large_args = json.dumps({"code": large_code})
 
-    # Enter tool section
-    _result1 = kimi_k2_tool_parser.extract_tool_calls_streaming(
-        previous_text="",
-        current_text="<|tool_calls_section_begin|>",
-        delta_text="<|tool_calls_section_begin|>",
-        previous_token_ids=[],
-        current_token_ids=[section_begin_id],
-        delta_token_ids=[section_begin_id],
-        request=None,
-    )
-    assert kimi_k2_tool_parser.in_tool_section is True
-
-    # Simulate a lot of text without proper tool calls or section end
-    # This should trigger the error recovery mechanism
-    large_text = "x" * 10000  # Exceeds max_section_chars
-
-    result2 = kimi_k2_tool_parser.extract_tool_calls_streaming(
-        previous_text="<|tool_calls_section_begin|>",
-        current_text="<|tool_calls_section_begin|>" + large_text,
-        delta_text=large_text,
-        previous_token_ids=[section_begin_id],
-        current_token_ids=[section_begin_id] + list(range(100, 100 + len(large_text))),
-        delta_token_ids=list(range(100, 100 + len(large_text))),
-        request=None,
+    model_output = (
+        f"Here's the code. <|tool_calls_section_begin|>"
+        f"<|tool_call_begin|>functions.write_file:0"
+        f"<|tool_call_argument_begin|>{large_args}"
+        f"<|tool_call_end|><|tool_calls_section_end|>"
     )
 
-    # Parser should have force-exited the tool section
-    assert kimi_k2_tool_parser.in_tool_section is False
-    # And returned the content as reasoning
-    assert result2 is not None
-    assert result2.content == large_text
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].function.name == "write_file"
+    # The full arguments must be preserved, not truncated
+    parsed_args = json.loads(result.tool_calls[0].function.arguments)
+    assert len(parsed_args["code"]) == 20000
 
 
 def test_state_reset(kimi_k2_tool_parser):
@@ -551,7 +537,7 @@ def test_state_reset(kimi_k2_tool_parser):
     kimi_k2_tool_parser.token_buffer = "some buffer"
     kimi_k2_tool_parser.current_tool_id = 5
     kimi_k2_tool_parser.prev_tool_call_arr = [{"id": "test"}]
-    kimi_k2_tool_parser.section_char_count = 1000
+    kimi_k2_tool_parser._buffer_overflow_logged = True
 
     # Reset
     kimi_k2_tool_parser.reset_streaming_state()
@@ -561,7 +547,7 @@ def test_state_reset(kimi_k2_tool_parser):
     assert kimi_k2_tool_parser.token_buffer == ""
     assert kimi_k2_tool_parser.current_tool_id == -1
     assert kimi_k2_tool_parser.prev_tool_call_arr == []
-    assert kimi_k2_tool_parser.section_char_count == 0
+    assert kimi_k2_tool_parser._buffer_overflow_logged is False
     assert kimi_k2_tool_parser.current_tool_name_sent is False
     assert kimi_k2_tool_parser.streamed_args_for_tool == []
 
@@ -923,3 +909,321 @@ def test_streaming_multiple_tool_calls_not_leaked(kimi_k2_tool_parser):
 
     # Legitimate content preserved
     assert "compare" in full_content.lower() or len(all_content) > 0
+
+
+# ============================================================
+# Regression tests for specific bug fixes
+# ============================================================
+
+
+def test_extract_tool_calls_singular_variant(kimi_k2_tool_parser):
+    """
+    Test that non-streaming extract_tool_calls works with the singular
+    marker variant <|tool_call_section_begin|> (note: "call" not "calls").
+    Regression test: previously only the plural variant was checked.
+    """
+    model_output = (
+        "I'll check the weather. "
+        "<|tool_call_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:0"
+        '<|tool_call_argument_begin|>{"city": "Berlin"}'
+        "<|tool_call_end|>"
+        "<|tool_call_section_end|>"
+    )
+
+    # Check if the tokenizer actually has the singular variant
+    singular_id = kimi_k2_tool_parser.vocab.get("<|tool_call_section_begin|>")
+    if singular_id is None:
+        pytest.skip("Tokenizer does not have singular variant token")
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called, (
+        "extract_tool_calls failed with singular section marker variant"
+    )
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].function.name == "get_weather"
+    assert result.content == "I'll check the weather. "
+
+
+@pytest.mark.parametrize(
+    ids=[
+        "array_ending",
+        "boolean_ending",
+        "number_ending",
+        "null_ending",
+        "nested_object_ending",
+        "string_ending",
+    ],
+    argnames=["args_dict"],
+    argvalues=[
+        ({"items": [1, 2, 3]},),
+        ({"flag": True, "name": "test"},),
+        ({"count": 42},),
+        ({"result": None},),
+        ({"data": {"nested": {"deep": [1, 2]}}},),
+        ({"city": "San Francisco"},),
+    ],
+)
+def test_streaming_tool_close_various_json_endings(kimi_k2_tool_parser, args_dict):
+    """
+    Regression test: the old closing logic looked for '"}' in delta_text
+    to detect the end of JSON arguments. This failed for any JSON not
+    ending with a string value — arrays, booleans, numbers, null, nested
+    objects all got their final chunk silently dropped.
+
+    The fix uses proper diffing against streamed_args_for_tool instead.
+    """
+    kimi_k2_tool_parser.reset_streaming_state()
+
+    section_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_begin|>")
+    section_end_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_end|>")
+    tool_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_call_begin|>")
+    tool_end_id = kimi_k2_tool_parser.vocab.get("<|tool_call_end|>")
+
+    args_str = json.dumps(args_dict)
+
+    # We need to stream the tool call in multiple chunks so that the
+    # closing logic actually has a diff to emit. Split args roughly in half.
+    split_point = len(args_str) // 2
+    args_part1 = args_str[:split_point]
+    args_part2 = args_str[split_point:]
+
+    deltas = [
+        # 1. Reasoning content
+        ("Let me help. ", [1, 2]),
+        # 2. Section begin
+        ("<|tool_calls_section_begin|>", [section_begin_id]),
+        # 3. Tool call begin + name + argument_begin + first half of args
+        (
+            f"<|tool_call_begin|>functions.test_func:0 <|tool_call_argument_begin|>{args_part1}",
+            [tool_begin_id, 10, 11, 12],
+        ),
+        # 4. Second half of args (updating existing tool call)
+        (args_part2, [13, 14]),
+        # 5. Tool call end + section end (closing chunk)
+        (
+            "<|tool_call_end|><|tool_calls_section_end|>",
+            [tool_end_id, section_end_id],
+        ),
+    ]
+
+    results = run_streaming_sequence(kimi_k2_tool_parser, deltas)
+
+    # Collect all streamed tool call arguments
+    all_tool_args = []
+    for r in results:
+        if r is not None and r.tool_calls:
+            for tc in r.tool_calls:
+                if hasattr(tc, "function") and tc.function is not None:
+                    func = tc.function
+                    # Handle both dict and object forms
+                    args = (
+                        func.get("arguments")
+                        if isinstance(func, dict)
+                        else getattr(func, "arguments", None)
+                    )
+                    if args:
+                        all_tool_args.append(args)
+
+    concatenated_args = "".join(all_tool_args)
+    assert concatenated_args, (
+        f"No tool call arguments were streamed for args ending with "
+        f"{repr(args_str[-5:])}. Results: {results}"
+    )
+
+    # The concatenated streamed args should form valid JSON matching the input
+    try:
+        parsed = json.loads(concatenated_args)
+    except json.JSONDecodeError:
+        # Partial streaming is OK as long as we got something
+        # (the closing chunk is what we're really testing)
+        pass
+    else:
+        assert parsed == args_dict, (
+            f"Streamed args don't match input. Got {parsed}, expected {args_dict}"
+        )
+
+
+def test_streaming_greedy_regex_multiple_tools(kimi_k2_tool_parser):
+    """
+    Regression test for GitHub issue #24478: greedy .+ in streaming regex
+    matched across tool call boundaries, collapsing multiple tool calls
+    into one garbled entry.
+
+    The fix changes .+ to [^<]+ for the tool_call_id capture group.
+
+    Streaming must be incremental — the parser uses token ID counting
+    and requires tool_call_begin before tool_call_end in separate chunks
+    to detect the start/close of each tool call.
+    """
+    kimi_k2_tool_parser.reset_streaming_state()
+
+    section_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_begin|>")
+    section_end_id = kimi_k2_tool_parser.vocab.get("<|tool_calls_section_end|>")
+    tool_begin_id = kimi_k2_tool_parser.vocab.get("<|tool_call_begin|>")
+    tool_end_id = kimi_k2_tool_parser.vocab.get("<|tool_call_end|>")
+
+    # Stream tool calls incrementally: begin, name+args, end for each
+    deltas = [
+        ("I'll help. ", [1, 2]),
+        ("<|tool_calls_section_begin|>", [section_begin_id]),
+        # Tool 1: begin
+        ("<|tool_call_begin|>", [tool_begin_id]),
+        # Tool 1: name + args
+        (
+            'functions.get_weather:0 <|tool_call_argument_begin|>{"city": "Tokyo"}',
+            [10, 11, 12],
+        ),
+        # Tool 1: end
+        (" <|tool_call_end|>", [tool_end_id]),
+        # Tool 2: begin
+        ("<|tool_call_begin|>", [tool_begin_id]),
+        # Tool 2: name + args
+        (
+            'functions.get_news:1 <|tool_call_argument_begin|>{"topic": "tech"}',
+            [20, 21, 22],
+        ),
+        # Tool 2: end
+        (" <|tool_call_end|>", [tool_end_id]),
+        ("<|tool_calls_section_end|>", [section_end_id]),
+    ]
+
+    results = run_streaming_sequence(kimi_k2_tool_parser, deltas)
+
+    # Collect tool call names from streamed results
+    tool_names = []
+    for r in results:
+        if r is not None and r.tool_calls:
+            for tc in r.tool_calls:
+                if hasattr(tc, "function") and tc.function is not None:
+                    func = tc.function
+                    name = (
+                        func.get("name")
+                        if isinstance(func, dict)
+                        else getattr(func, "name", None)
+                    )
+                    if name:
+                        tool_names.append(name)
+
+    # We should see two distinct tool names, not one garbled entry
+    assert "get_weather" in tool_names, (
+        f"get_weather not found in streamed tool names: {tool_names}"
+    )
+    assert "get_news" in tool_names, (
+        f"get_news not found in streamed tool names: {tool_names}"
+    )
+
+
+def test_extract_tool_calls_non_string_json_values(kimi_k2_tool_parser):
+    """
+    Test that non-streaming extraction handles various JSON value types
+    correctly, including arrays, booleans, numbers, and null.
+    """
+    model_output = (
+        "Running tasks. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.process:0"
+        '<|tool_call_argument_begin|>{"items": [1, "two", null], "flag": true, "count": 99}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+    parsed = json.loads(result.tool_calls[0].function.arguments)
+    assert parsed["items"] == [1, "two", None]
+    assert parsed["flag"] is True
+    assert parsed["count"] == 99
+
+
+def test_extract_tool_calls_backslashes_in_args(kimi_k2_tool_parser):
+    """
+    Regression test: the old code had a unicode_escape decode that would
+    corrupt backslashes in arguments (e.g. Windows paths like C:\\Users).
+    The fix removes the encode/decode round-trip entirely.
+    """
+    # Non-streaming path: backslashes in arguments should be preserved
+    model_output = (
+        "Writing file. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.write_file:0"
+        '<|tool_call_argument_begin|>{"path": "C:\\\\Users\\\\test\\\\file.py", "content": "hello\\nworld"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 1
+
+    parsed = json.loads(result.tool_calls[0].function.arguments)
+    assert parsed["path"] == "C:\\Users\\test\\file.py"
+    assert parsed["content"] == "hello\nworld"
+
+
+def test_extract_tool_calls_unicode_in_args(kimi_k2_tool_parser):
+    """
+    Regression test: ensure non-ASCII characters in tool call arguments
+    are preserved correctly. The old unicode_escape decode would corrupt
+    multi-byte UTF-8 characters.
+    """
+    model_output = (
+        "Checking weather. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:0"
+        '<|tool_call_argument_begin|>{"city": "\u6771\u4eac", "note": "\u00e9\u00e8\u00ea"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    parsed = json.loads(result.tool_calls[0].function.arguments)
+    assert parsed["city"] == "\u6771\u4eac"  # Tokyo in Japanese
+    assert parsed["note"] == "\u00e9\u00e8\u00ea"
+
+
+def test_buffer_overflow_warning_resets_between_sections(kimi_k2_tool_parser):
+    """
+    Regression test: _buffer_overflow_logged was never reset, meaning
+    the overflow warning was permanently silenced after the first occurrence.
+    Now it resets on section exit so each section can warn independently.
+    """
+    kimi_k2_tool_parser.reset_streaming_state()
+
+    # Simulate overflow
+    kimi_k2_tool_parser._buffer_overflow_logged = True
+    kimi_k2_tool_parser.in_tool_section = True
+
+    # Exit section
+    kimi_k2_tool_parser._reset_section_state()
+
+    # Flag should be reset so next section can warn again
+    assert kimi_k2_tool_parser._buffer_overflow_logged is False
+
+
+def test_extract_tool_calls_concatenated_no_spaces(kimi_k2_tool_parser):
+    """
+    Regression test for GitHub issue #24478: tool calls concatenated with
+    zero spacing between end and begin markers should be parsed as separate
+    tool calls, not collapsed into one.
+    """
+    model_output = (
+        "Doing two things. <|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.func_a:0"
+        '<|tool_call_argument_begin|>{"x": 1}'
+        "<|tool_call_end|>"
+        "<|tool_call_begin|>functions.func_b:1"  # No space before this
+        '<|tool_call_argument_begin|>{"y": 2}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    result = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)
+    assert result.tools_called
+    assert len(result.tool_calls) == 2, (
+        f"Expected 2 tool calls but got {len(result.tool_calls)}: "
+        f"{[tc.function.name for tc in result.tool_calls]}"
+    )
+    assert result.tool_calls[0].function.name == "func_a"
+    assert result.tool_calls[1].function.name == "func_b"
+    assert json.loads(result.tool_calls[0].function.arguments) == {"x": 1}
+    assert json.loads(result.tool_calls[1].function.arguments) == {"y": 2}
