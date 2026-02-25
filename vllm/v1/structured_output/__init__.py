@@ -408,7 +408,10 @@ class StructuredOutputManager:
         # Check if reasoning ends in *this* step
         delta_from = request.num_computed_tokens - request.num_output_placeholders
         all_token_ids = request.all_token_ids
-        delta_ids = list(all_token_ids[delta_from:])
+        start = (
+            delta_from if delta_from >= 0 else max(len(all_token_ids) + delta_from, 0)
+        )
+        delta_ids = list(all_token_ids[start:])
         if self.reasoner.is_reasoning_end_streaming(all_token_ids, delta_ids):
             structured_req.reasoning_ended = True
             # Try to sync grammar with tokens after </think> that were
