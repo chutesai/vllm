@@ -550,8 +550,7 @@ def _parse_browser_tool_call(message: Message, recipient: str) -> ResponseOutput
         browser_call = json.loads(content.text)
     except json.JSONDecodeError:
         logger.warning(
-            "Invalid JSON in browser tool call, using error placeholder: %s",
-            content.text,
+            "Invalid JSON in browser tool call, using error placeholder."
         )
         json_retry_output_message = (
             f"Invalid JSON args, caught and retried: {content.text}"

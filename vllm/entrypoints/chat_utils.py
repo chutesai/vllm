@@ -1162,7 +1162,7 @@ def _get_full_multimodal_text_prompt(
                 "when manually placing image placeholders.",
                 interleave_strings,
             )
-            logger.debug("Input prompt: %s", text_prompt)
+            logger.debug("Input prompt has mismatched placeholders")
             raise ValueError(
                 f"Found more '{placeholder}' placeholders in input prompt than "
                 "actual multimodal data items."
