@@ -10,7 +10,11 @@ import torch
 from tqdm import tqdm
 
 import vllm.envs as envs
-from vllm.distributed.parallel_state import get_dp_group, is_global_first_rank
+from vllm.distributed.parallel_state import (
+    get_dp_group,
+    get_tp_group,
+    is_global_first_rank,
+)
 from vllm.logger import init_logger
 from vllm.model_executor.layers.fused_moe.deep_gemm_moe import DeepGemmExperts
 from vllm.model_executor.layers.fused_moe.deep_gemm_utils import compute_aligned_M
@@ -393,4 +397,37 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
             else:
                 _do_warmup(None)
 
-    _run_warmup(show_pbar=is_global_first_rank())
+    dp_group = get_dp_group()
+    tp_group = get_tp_group()
+
+    needs_serialization = dp_group.world_size > 1 or tp_group.world_size > 1
+
+    if needs_serialization:
+        # Serialize DeepGEMM warmup to avoid concurrent JIT compilation
+        # corrupting the shared .cubin cache on disk (DeepGEMM has no
+        # file locking).
+        #
+        # With TP>1, workers at different TP positions can share DeepGEMM
+        # cache keys (e.g. MoE expert GEMMs have identical shapes across
+        # TP ranks when expert-parallel is enabled).  The DP-group barriers
+        # are independent per TP position, so two workers in the same TP
+        # group but different DP groups would compile simultaneously and
+        # race on the same cache files.
+        #
+        # Fix: within each DP-rank iteration, also serialize across TP
+        # ranks.  TP rank 0 compiles first (populating the cache), then
+        # TP rank 1+ loads from the warm cache.  Since all members of a
+        # TP group share the same DP rank, the TP-group barrier is safe
+        # to use inside the DP-rank loop.
+        for dp_rank in range(dp_group.world_size):
+            if dp_group.rank_in_group == dp_rank:
+                for tp_rank in range(tp_group.world_size):
+                    if tp_group.rank_in_group == tp_rank:
+                        _run_warmup(
+                            show_pbar=(dp_rank == 0
+                                       and tp_rank == 0
+                                       and is_global_first_rank()))
+                    tp_group.barrier()
+            dp_group.barrier()
+    else:
+        _run_warmup(show_pbar=is_global_first_rank())
