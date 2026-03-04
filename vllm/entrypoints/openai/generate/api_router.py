@@ -117,7 +117,7 @@ async def init_generate_state(
             max_stream_completion_tokens=args.max_stream_completion_tokens,
             enable_return_hidden_states=args.enable_return_hidden_states,
         )
-        if "generate" in supported_tasks
+        if any(task in supported_tasks for task in ("generate", "render"))
         else None
     )
     # Warm up chat template processing to avoid first-request latency
@@ -134,7 +134,7 @@ async def init_generate_state(
             log_error_stack=args.log_error_stack,
             enable_return_hidden_states=args.enable_return_hidden_states,
         )
-        if "generate" in supported_tasks
+        if any(task in supported_tasks for task in ("generate", "render"))
         else None
     )
     state.anthropic_serving_messages = (

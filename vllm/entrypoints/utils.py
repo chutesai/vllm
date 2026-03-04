@@ -5,9 +5,12 @@ import asyncio
 import dataclasses
 import functools
 import os
+import sys
 import time
+import traceback
 from argparse import Namespace
 from collections.abc import AsyncGenerator
+from http import HTTPStatus
 from logging import Logger
 from string import Template
 from typing import TYPE_CHECKING
@@ -19,6 +22,7 @@ from starlette.background import BackgroundTask, BackgroundTasks
 
 from vllm import envs
 from vllm.engine.arg_utils import EngineArgs
+from vllm.exceptions import VLLMValidationError
 from vllm.logger import current_formatter_type, init_logger
 from vllm.platforms import current_platform
 from vllm.utils.argparse_utils import FlexibleArgumentParser
@@ -32,6 +36,8 @@ if TYPE_CHECKING:
         CompletionRequest,
     )
     from vllm.entrypoints.openai.engine.protocol import (
+        ErrorInfo,
+        ErrorResponse,
         StreamOptions,
     )
     from vllm.entrypoints.openai.models.protocol import LoRAModulePath
@@ -39,9 +45,10 @@ else:
     ChatCompletionRequest = object
     CompletionRequest = object
     EngineClient = object
-    StreamOptions = object
+    ErrorResponse = object
+    ErrorInfo = object
     LoRAModulePath = object
-
+    StreamOptions = object
 
 logger = init_logger(__name__)
 
@@ -347,3 +354,59 @@ def log_version_and_model(lgr: Logger, version: str, model_name: str) -> None:
         message = logo_template.substitute(colors)
 
     lgr.info(message, version, model_name)
+
+
+def create_error_response(
+    message: str | Exception,
+    err_type: str = "BadRequestError",
+    status_code: HTTPStatus = HTTPStatus.BAD_REQUEST,
+    param: str | None = None,
+    log_error_stack: bool = False,
+) -> "ErrorResponse":
+    exc: Exception | None = None
+
+    from vllm.entrypoints.openai.engine.protocol import ErrorInfo, ErrorResponse
+
+    if isinstance(message, Exception):
+        exc = message
+
+        if isinstance(exc, VLLMValidationError):
+            err_type = "BadRequestError"
+            status_code = HTTPStatus.BAD_REQUEST
+            param = exc.parameter
+        elif isinstance(exc, (ValueError, TypeError, RuntimeError, OverflowError)):
+            # Common validation errors from user input
+            err_type = "BadRequestError"
+            status_code = HTTPStatus.BAD_REQUEST
+            param = None
+        elif isinstance(exc, NotImplementedError):
+            err_type = "NotImplementedError"
+            status_code = HTTPStatus.NOT_IMPLEMENTED
+            param = None
+        elif exc.__class__.__name__ == "TemplateError":
+            # jinja2.TemplateError (avoid importing jinja2)
+            err_type = "BadRequestError"
+            status_code = HTTPStatus.BAD_REQUEST
+            param = None
+        else:
+            err_type = "InternalServerError"
+            status_code = HTTPStatus.INTERNAL_SERVER_ERROR
+            param = None
+
+        message = str(exc)
+
+    if log_error_stack:
+        exc_type, _, _ = sys.exc_info()
+        if exc_type is not None:
+            traceback.print_exc()
+        else:
+            traceback.print_stack()
+
+    return ErrorResponse(
+        error=ErrorInfo(
+            message=sanitize_message(message),
+            type=err_type,
+            code=status_code.value,
+            param=param,
+        )
+    )
