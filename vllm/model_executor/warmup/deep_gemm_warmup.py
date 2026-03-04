@@ -16,6 +16,9 @@ from vllm.distributed.parallel_state import (
     is_global_first_rank,
 )
 from vllm.logger import init_logger
+from vllm.model_executor.layers.fused_moe.batched_deep_gemm_moe import (
+    BatchedDeepGemmExperts,
+)
 from vllm.model_executor.layers.fused_moe.deep_gemm_moe import DeepGemmExperts
 from vllm.model_executor.layers.fused_moe.deep_gemm_utils import compute_aligned_M
 from vllm.model_executor.layers.fused_moe.layer import FusedMoE, FusedMoEModularMethod
@@ -27,8 +30,10 @@ from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
 from vllm.tracing import instrument
 from vllm.utils.deep_gemm import (
     fp8_gemm_nt,
+    fp8_m_grouped_gemm_nt_masked,
     get_mk_alignment_for_contiguous_layout,
     m_grouped_fp8_gemm_nt_contiguous,
+    warmup_kernels,
 )
 from vllm.utils.math_utils import cdiv
 from vllm.utils.platform_utils import num_compute_units
@@ -177,9 +182,10 @@ def _fused_moe_grouped_gemm_may_use_deep_gemm(module: torch.nn.Module) -> bool:
         # modular kernels could invoke deep_gemm_moe_fp8
         return True
 
-    # Further check if the ModularKernel implementation uses the DeepGemmExperts
+    # Further check if the ModularKernel implementation uses DeepGemm experts
     return isinstance(
-        module.quant_method.moe_kernel, (DeepGemmExperts, TritonOrDeepGemmExperts)
+        module.quant_method.moe_kernel,
+        (DeepGemmExperts, TritonOrDeepGemmExperts, BatchedDeepGemmExperts),
     )
 
 
@@ -214,16 +220,24 @@ def _deepgemm_fp8_gemm_nt_warmup(
         return
 
     n, k = w.size()
-    block_m = get_mk_alignment_for_contiguous_layout()[0]
+    m_values = _get_fp8_gemm_nt_m_values(w, max_tokens)
 
+    # Try batch API first (no GPU tensors needed)
+    result = warmup_kernels("fp8_gemm_nt", m_values, n, k, 1)
+    if result is not None:
+        if pbar is not None:
+            pbar.update(len(m_values))
+        FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
+        return
+
+    # Fallback: existing per-M execution (for old DeepGEMM)
+    block_m = get_mk_alignment_for_contiguous_layout()[0]
     device = w.device
     a1q = torch.empty((max_tokens, k), device=device, dtype=torch.float8_e4m3fn)
     a1q_scales = torch.empty(
         (max_tokens, k // block_m), device=device, dtype=torch.float32
     )
     out = torch.empty((max_tokens, n), device=device, dtype=torch.bfloat16)
-
-    m_values = _get_fp8_gemm_nt_m_values(w, max_tokens)
 
     for num_tokens in m_values:
         fp8_gemm_nt(
@@ -285,32 +299,43 @@ def _deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
         return
 
     MAX_M, block_m, expert_ids = _get_grouped_gemm_params(w1, w2, num_topk, max_tokens)
-    device = w1.device
+    m_values = list(range(block_m, MAX_M + 1, block_m))
 
-    def _warmup(w: torch.Tensor, w_scale: torch.Tensor):
+    for w, ws in [(w1, w1_scale), (w2, w2_scale)]:
+        if w.size() in GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE:
+            continue
         _, n, k = w.size()
+        num_experts = w.size(0)
+
+        # Try batch API first (no GPU tensors needed)
+        result = warmup_kernels(
+            "m_grouped_fp8_gemm_nt_contiguous", m_values, n, k, num_experts
+        )
+        if result is not None:
+            if pbar is not None:
+                pbar.update(len(m_values))
+            GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE.add(w.size())
+            continue
+
+        # Fallback: existing per-M execution (for old DeepGEMM)
+        device = w1.device
         a1q = torch.empty((MAX_M, k), device=device, dtype=torch.float8_e4m3fn)
         a1q_scales = torch.empty(
             (MAX_M, k // block_m), device=device, dtype=torch.float32
         )
         out = torch.empty((MAX_M, n), device=device, dtype=torch.bfloat16)
 
-        m_values = list(range(block_m, MAX_M + 1, block_m))
-
         for num_tokens in m_values:
             m_grouped_fp8_gemm_nt_contiguous(
                 (a1q[:num_tokens], a1q_scales[:num_tokens]),
-                (w, w_scale),
+                (w, ws),
                 out[:num_tokens],
                 expert_ids[:num_tokens],
             )
             if pbar is not None:
                 pbar.update(1)
 
-    for w, ws in [(w1, w1_scale), (w2, w2_scale)]:
-        if w.size() not in GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE:
-            _warmup(w, ws)
-            GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE.add(w.size())
+        GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE.add(w.size())
 
 
 def deepgemm_fp8_gemm_nt_warmup(
@@ -339,11 +364,93 @@ def deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
         )
 
 
+MASKED_FP8_GEMM_NT_WARMUP_CACHE: set[torch.Size] = set()
+
+
+def _deepgemm_masked_fp8_gemm_nt_warmup(
+    w1: torch.Tensor,
+    w2: torch.Tensor,
+    w1_scale: torch.Tensor,
+    w2_scale: torch.Tensor,
+    num_topk: int,
+    max_tokens: int,
+    pbar: tqdm | None = None,
+):
+    MAX_M, block_m, _ = _get_grouped_gemm_params(w1, w2, num_topk, max_tokens)
+    m_values = list(range(block_m, MAX_M + 1, block_m))
+
+    for w, ws in [(w1, w1_scale), (w2, w2_scale)]:
+        if w.size() in MASKED_FP8_GEMM_NT_WARMUP_CACHE:
+            continue
+        _, n, k = w.size()
+        num_experts = w.size(0)
+
+        # Try batch API first (no GPU tensors needed)
+        result = warmup_kernels(
+            "m_grouped_fp8_gemm_nt_masked", m_values, n, k, num_experts
+        )
+        if result is not None:
+            if pbar is not None:
+                pbar.update(len(m_values))
+            MASKED_FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
+            continue
+
+        # Fallback: execute per-M with dummy tensors
+        device = w1.device
+        a1q = torch.empty(
+            (num_experts, MAX_M, k), device=device, dtype=torch.float8_e4m3fn
+        )
+        a1q_scales = torch.empty(
+            (num_experts, MAX_M, k // block_m),
+            device=device,
+            dtype=torch.float32,
+        )
+        out = torch.empty((num_experts, MAX_M, n), device=device, dtype=torch.bfloat16)
+        cnt = torch.full((num_experts,), 0, device=device, dtype=torch.int32)
+        expected_m = torch.full((num_experts,), 0, device=device, dtype=torch.int32)
+
+        for num_tokens in m_values:
+            cnt.fill_(num_tokens)
+            expected_m.fill_(num_tokens)
+            fp8_m_grouped_gemm_nt_masked(
+                (a1q[:, :num_tokens], a1q_scales[:, :num_tokens]),
+                (w, ws),
+                out[:, :num_tokens],
+                cnt,
+                expected_m,
+            )
+            if pbar is not None:
+                pbar.update(1)
+
+        MASKED_FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
+
+
+def deepgemm_masked_fp8_gemm_nt_warmup(
+    model: torch.nn.Module, max_tokens: int, pbar: tqdm | None = None
+):
+    dg_modules = [
+        m
+        for m in model.modules()
+        if _fused_moe_grouped_gemm_may_use_deep_gemm(m)
+        and isinstance(getattr(m, "quant_method", None), FusedMoEModularMethod)
+        and isinstance(m.quant_method.moe_kernel, BatchedDeepGemmExperts)
+    ]
+
+    for dgm in dg_modules:
+        w13, w13_scale, w2, w2_scale, num_topk = _extract_data_from_fused_moe_module(
+            dgm
+        )
+        _deepgemm_masked_fp8_gemm_nt_warmup(
+            w13, w2, w13_scale, w2_scale, num_topk, max_tokens, pbar=pbar
+        )
+
+
 def _count_warmup_iterations(model: torch.nn.Module, max_tokens: int) -> int:
     seen_fp8_sizes: set[torch.Size] = set(FP8_GEMM_NT_WARMUP_CACHE)
     seen_grouped_sizes: set[torch.Size] = set(
         GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE
     )
+    seen_masked_sizes: set[torch.Size] = set(MASKED_FP8_GEMM_NT_WARMUP_CACHE)
 
     total = 0
     for m in model.modules():
@@ -354,16 +461,38 @@ def _count_warmup_iterations(model: torch.nn.Module, max_tokens: int) -> int:
                 seen_fp8_sizes.add(w.size())
         elif _fused_moe_grouped_gemm_may_use_deep_gemm(m):
             w13, _, w2, _, num_topk = _extract_data_from_fused_moe_module(m)
-            if w13.size() in seen_grouped_sizes and w2.size() in seen_grouped_sizes:
-                continue
-            MAX_M, block_m, _ = _get_grouped_gemm_params(w13, w2, num_topk, max_tokens)
-            n_values = (MAX_M - block_m) // block_m + 1
-            if w13.size() not in seen_grouped_sizes:
-                total += n_values
-                seen_grouped_sizes.add(w13.size())
-            if w2.size() not in seen_grouped_sizes:
-                total += n_values
-                seen_grouped_sizes.add(w2.size())
+
+            # Check for BatchedDeepGemmExperts (masked variant)
+            is_masked = isinstance(
+                getattr(m, "quant_method", None), FusedMoEModularMethod
+            ) and isinstance(m.quant_method.moe_kernel, BatchedDeepGemmExperts)
+
+            if is_masked:
+                if w13.size() in seen_masked_sizes and w2.size() in seen_masked_sizes:
+                    continue
+                MAX_M, block_m, _ = _get_grouped_gemm_params(
+                    w13, w2, num_topk, max_tokens
+                )
+                n_values = (MAX_M - block_m) // block_m + 1
+                if w13.size() not in seen_masked_sizes:
+                    total += n_values
+                    seen_masked_sizes.add(w13.size())
+                if w2.size() not in seen_masked_sizes:
+                    total += n_values
+                    seen_masked_sizes.add(w2.size())
+            else:
+                if w13.size() in seen_grouped_sizes and w2.size() in seen_grouped_sizes:
+                    continue
+                MAX_M, block_m, _ = _get_grouped_gemm_params(
+                    w13, w2, num_topk, max_tokens
+                )
+                n_values = (MAX_M - block_m) // block_m + 1
+                if w13.size() not in seen_grouped_sizes:
+                    total += n_values
+                    seen_grouped_sizes.add(w13.size())
+                if w2.size() not in seen_grouped_sizes:
+                    total += n_values
+                    seen_grouped_sizes.add(w2.size())
     return total
 
 
@@ -373,10 +502,13 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
     if total == 0:
         return
 
+    import torch.distributed as dist
+
     def _run_warmup(show_pbar: bool):
         def _do_warmup(pbar):
             deepgemm_fp8_gemm_nt_warmup(model, max_tokens, pbar)
             deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(model, max_tokens, pbar)
+            deepgemm_masked_fp8_gemm_nt_warmup(model, max_tokens, pbar)
 
         try:
             if show_pbar:
@@ -401,32 +533,31 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
     tp_group = get_tp_group()
 
     needs_serialization = dp_group.world_size > 1 or tp_group.world_size > 1
+    # Check if the batch warmup API is available by doing a no-op probe.
+    # warmup_kernels() returns None when the underlying impl is absent.
+    has_batch_warmup = warmup_kernels("fp8_gemm_nt", [], 128, 128, 1) is not None
 
-    if needs_serialization:
-        # Serialize DeepGEMM warmup to avoid concurrent JIT compilation
-        # corrupting the shared .cubin cache on disk (DeepGEMM has no
-        # file locking).
-        #
-        # With TP>1, workers at different TP positions can share DeepGEMM
-        # cache keys (e.g. MoE expert GEMMs have identical shapes across
-        # TP ranks when expert-parallel is enabled).  The DP-group barriers
-        # are independent per TP position, so two workers in the same TP
-        # group but different DP groups would compile simultaneously and
-        # race on the same cache files.
-        #
-        # Fix: within each DP-rank iteration, also serialize across TP
-        # ranks.  TP rank 0 compiles first (populating the cache), then
-        # TP rank 1+ loads from the warm cache.  Since all members of a
-        # TP group share the same DP rank, the TP-group barrier is safe
-        # to use inside the DP-rank loop.
+    if needs_serialization and has_batch_warmup:
+        # With the batch warmup API all ranks share one cache directory.
+        # Rank 0 compiles (writes to cache), then all other ranks load
+        # from the already-warm cache after the barrier.
+        if is_global_first_rank():
+            _run_warmup(show_pbar=True)
+        dist.barrier()
+        if not is_global_first_rank():
+            _run_warmup(show_pbar=False)  # Fast: cache hits only
+    elif needs_serialization:
+        # Legacy: serialize across TP and DP ranks to avoid concurrent
+        # JIT compilation corrupting the shared .cubin cache on disk.
         for dp_rank in range(dp_group.world_size):
             if dp_group.rank_in_group == dp_rank:
                 for tp_rank in range(tp_group.world_size):
                     if tp_group.rank_in_group == tp_rank:
                         _run_warmup(
-                            show_pbar=(dp_rank == 0
-                                       and tp_rank == 0
-                                       and is_global_first_rank()))
+                            show_pbar=(
+                                dp_rank == 0 and tp_rank == 0 and is_global_first_rank()
+                            )
+                        )
                     tp_group.barrier()
             dp_group.barrier()
     else:

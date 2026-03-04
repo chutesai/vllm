@@ -121,6 +121,7 @@ _get_paged_mqa_logits_metadata_impl: Callable[..., Any] | None = None
 _get_mn_major_tma_aligned_tensor_impl: Callable[..., Any] | None = None
 _get_mk_alignment_for_contiguous_layout_impl: Callable[..., Any] | None = None
 _transform_sf_into_required_layout_impl: Callable[..., Any] | None = None
+_warmup_kernels_impl: Callable[..., Any] | None = None
 
 
 def _lazy_init() -> None:
@@ -131,6 +132,7 @@ def _lazy_init() -> None:
     global _get_mn_major_tma_aligned_tensor_impl
     global _get_mk_alignment_for_contiguous_layout_impl
     global _transform_sf_into_required_layout_impl
+    global _warmup_kernels_impl
     # fast path
     if (
         _fp8_gemm_nt_impl is not None
@@ -141,6 +143,7 @@ def _lazy_init() -> None:
         or _get_paged_mqa_logits_metadata_impl is not None
         or _get_mk_alignment_for_contiguous_layout_impl is not None
         or _transform_sf_into_required_layout_impl is not None
+        or _warmup_kernels_impl is not None
     ):
         return
 
@@ -148,25 +151,14 @@ def _lazy_init() -> None:
         return
 
     # Set up deep_gemm cache path.
-    # Each worker gets its own subdirectory to prevent concurrent JIT
-    # compilation from corrupting shared .cubin files — DeepGEMM has
-    # no file locking, so simultaneous writes (e.g. during profile_run
-    # which runs all workers concurrently) can produce corrupt cache
-    # entries that cause CUDA_ERROR_ILLEGAL_ADDRESS on subsequent loads.
+    # All ranks share one cache directory.  Warmup serialization ensures
+    # only one rank writes at a time; subsequent ranks read from the
+    # already-warm cache.
     DEEP_GEMM_JIT_CACHE_ENV_NAME = "DG_JIT_CACHE_DIR"
     base_cache_dir = os.environ.get(DEEP_GEMM_JIT_CACHE_ENV_NAME, None)
     if base_cache_dir is None:
         base_cache_dir = os.path.join(envs.VLLM_CACHE_ROOT, "deep_gemm")
-
-    import torch.distributed as dist
-
-    if dist.is_initialized():
-        rank = dist.get_rank()
-        os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = os.path.join(
-            base_cache_dir, f"rank_{rank}"
-        )
-    else:
-        os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = base_cache_dir
+    os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = base_cache_dir
 
     _dg = importlib.import_module("deep_gemm")
 
@@ -187,7 +179,22 @@ def _lazy_init() -> None:
     _transform_sf_into_required_layout_impl = getattr(
         _dg, "transform_sf_into_required_layout", None
     )
+    _warmup_kernels_impl = getattr(_dg, "warmup_kernels", None)
     DeepGemmQuantScaleFMT.init_oracle_cache()
+
+
+def warmup_kernels(
+    kernel_type: str, m_list: list[int], n: int, k: int, num_groups: int
+) -> int | None:
+    """Batch-warmup DeepGEMM kernels without allocating GPU tensors.
+
+    Returns the number of unique kernels compiled, or None if the batch
+    warmup API is not available (old DeepGEMM).
+    """
+    _lazy_init()
+    if _warmup_kernels_impl is None:
+        return None
+    return _warmup_kernels_impl(kernel_type, m_list, n, k, num_groups)
 
 
 def get_num_sms() -> int:
@@ -569,4 +576,5 @@ __all__ = [
     "should_use_deepgemm_for_fp8_linear",
     "get_col_major_tma_aligned_tensor",
     "get_mk_alignment_for_contiguous_layout",
+    "warmup_kernels",
 ]
