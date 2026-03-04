@@ -183,7 +183,7 @@ from vllm.v1.worker.ubatch_utils import (
     split_attn_metadata,
 )
 from vllm.v1.worker.utils import is_residual_scattered_for_sp
-from vllm.v1.worker.workspace import lock_workspace
+from vllm.v1.worker.workspace import lock_workspace, unlock_workspace
 
 from .utils import (
     AttentionGroup,
@@ -271,6 +271,25 @@ class AsyncGPUModelRunnerOutput(AsyncModelRunnerOutput):
         output.sampled_token_ids = valid_sampled_token_ids
         output.logprobs = logprobs_lists
         return output
+
+
+def _is_cuda_oom(e: BaseException) -> bool:
+    """Check if an exception represents a CUDA out-of-memory error.
+
+    Handles ``torch.cuda.OutOfMemoryError`` and
+    ``torch.AcceleratorError`` with an OOM message (raised by some
+    PyTorch versions on ``capture_end()``).
+    """
+    if isinstance(e, torch.cuda.OutOfMemoryError):
+        return True
+    accelerator_error_cls = getattr(torch, "AcceleratorError", None)
+    if (
+        accelerator_error_cls is not None
+        and isinstance(e, accelerator_error_cls)
+        and "out of memory" in str(e).lower()
+    ):
+        return True
+    return False
 
 
 def _copy_pooler_output_to_cpu(
@@ -5362,27 +5381,28 @@ class GPUModelRunner(
         # Capture the large shapes first so that the smaller shapes
         # can reuse the memory pool allocated for the large shapes.
         set_cudagraph_capturing_enabled(True)
-        with freeze_gc(), graph_capture(device=self.device):
-            start_free_gpu_memory = torch.cuda.mem_get_info()[0]
+        try:
+            with freeze_gc(), graph_capture(device=self.device):
+                start_free_gpu_memory = torch.cuda.mem_get_info()[0]
 
-            for (
-                runtime_mode,
-                batch_descs,
-            ) in self.cudagraph_dispatcher.get_capture_descs():
-                self._capture_cudagraphs(
-                    batch_descriptors=batch_descs,
-                    cudagraph_runtime_mode=runtime_mode,
-                )
+                for (
+                    runtime_mode,
+                    batch_descs,
+                ) in self.cudagraph_dispatcher.get_capture_descs():
+                    self._capture_cudagraphs(
+                        batch_descriptors=batch_descs,
+                        cudagraph_runtime_mode=runtime_mode,
+                    )
 
-            torch.cuda.synchronize()
-            end_free_gpu_memory = torch.cuda.mem_get_info()[0]
-
-        # Disable cudagraph capturing globally, so any unexpected cudagraph
-        # capturing will be detected and raise an error after here.
-        # Note: We don't put it into graph_capture context manager because
-        # we may do lazy capturing in future that still allows capturing
-        # after here.
-        set_cudagraph_capturing_enabled(False)
+                torch.cuda.synchronize()
+                end_free_gpu_memory = torch.cuda.mem_get_info()[0]
+        finally:
+            # Disable cudagraph capturing globally, so any unexpected cudagraph
+            # capturing will be detected and raise an error after here.
+            # Note: We don't put it into graph_capture context manager because
+            # we may do lazy capturing in future that still allows capturing
+            # after here.
+            set_cudagraph_capturing_enabled(False)
 
         # Lock workspace to prevent resizing during execution.
         # Max workspace sizes should have been captured during warmup/profiling.
@@ -5435,6 +5455,9 @@ class GPUModelRunner(
                 ),
             )
 
+        max_capture_retries = max(envs.VLLM_CUDAGRAPH_CAPTURE_RETRIES, 0)
+        skipped_descriptors: list[BatchDescriptor] = []
+
         # We skip EPLB here since we don't want to record dummy metrics
         for batch_desc in batch_descriptors:
             num_tokens = batch_desc.num_tokens
@@ -5455,7 +5478,8 @@ class GPUModelRunner(
                 )
             )
 
-            for _ in range(self.compilation_config.cudagraph_num_of_warmups):
+            num_warmups = max(self.compilation_config.cudagraph_num_of_warmups, 0)
+            for _ in range(max(1, num_warmups)):
                 # Use CUDAGraphRuntimeStyle.NONE (default) for warmup.
                 # But be careful, warm up with `NONE` is orthogonal to
                 # if we want to warm up attention or not. This is
@@ -5469,20 +5493,93 @@ class GPUModelRunner(
                     num_active_loras=num_active_loras,
                 )
 
-            # Capture run
-            dummy_run(
-                num_tokens,
-                cudagraph_runtime_mode=cudagraph_runtime_mode,
-                allow_microbatching=allow_microbatching,
-                num_active_loras=num_active_loras,
-                is_graph_capturing=True,
+            captured = False
+            for capture_attempt in range(max_capture_retries + 1):
+                # Lock the reusable workspace during graph capture so any
+                # growth happens in warmup (outside `torch.cuda.graph`)
+                # rather than in capture (which can increase graph-pool
+                # memory pressure).
+                lock_workspace()
+                try:
+                    # Capture run
+                    dummy_run(
+                        num_tokens,
+                        cudagraph_runtime_mode=cudagraph_runtime_mode,
+                        allow_microbatching=allow_microbatching,
+                        num_active_loras=num_active_loras,
+                        is_graph_capturing=True,
+                    )
+                    captured = True
+                    break
+                except Exception as e:
+                    if not _is_cuda_oom(e):
+                        raise
+
+                    is_last_attempt = capture_attempt >= max_capture_retries
+                    if is_last_attempt:
+                        # All retries exhausted — skip this descriptor
+                        # and fall back to eager for this batch size.
+                        logger.warning(
+                            "CUDA graph capture OOM for descriptor "
+                            "(mode=%s, num_tokens=%d, "
+                            "uniform_decode=%s, "
+                            "num_active_loras=%d) after %d attempt(s)."
+                            " Skipping — will use eager execution for"
+                            " this batch size.",
+                            cudagraph_runtime_mode.name,
+                            num_tokens,
+                            uniform_decode,
+                            num_active_loras,
+                            capture_attempt + 1,
+                        )
+                        skipped_descriptors.append(batch_desc)
+                    else:
+                        logger.warning(
+                            "CUDA graph capture OOM for descriptor "
+                            "(mode=%s, num_tokens=%d, "
+                            "uniform_decode=%s, "
+                            "num_active_loras=%d). Retrying (%d/%d) "
+                            "after cleanup.",
+                            cudagraph_runtime_mode.name,
+                            num_tokens,
+                            uniform_decode,
+                            num_active_loras,
+                            capture_attempt + 1,
+                            max_capture_retries,
+                        )
+
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                finally:
+                    # Unlock between descriptors so warmups for the next
+                    # descriptor can still grow the workspace.
+                    unlock_workspace()
+
+            if captured:
+                # Synchronize and clear cache after each successful graph
+                # capture to ensure memory is fully released before next
+                # capture. This is especially important in TEE environments
+                # where encrypted memory deallocation may be slower.
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+
+        # Remove failed descriptors so the dispatcher falls back to
+        # CUDAGraphMode.NONE (eager execution) for these batch sizes.
+        for desc in skipped_descriptors:
+            self.cudagraph_dispatcher.cudagraph_keys[cudagraph_runtime_mode].discard(
+                desc
             )
-            # Synchronize and clear cache after each graph capture to ensure
-            # memory is fully released before next capture. This is especially
-            # important in TEE environments where encrypted memory deallocation
-            # may be slower.
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
+
+        if skipped_descriptors:
+            logger.warning(
+                "Skipped CUDA graph capture for %d batch size(s) due to "
+                "OOM: %s. These will use eager execution. Consider "
+                "reducing max_num_seqs or gpu_memory_utilization.",
+                len(skipped_descriptors),
+                [d.num_tokens for d in skipped_descriptors],
+            )
+
         self.maybe_remove_all_loras(self.lora_config)
 
     def initialize_attn_backend(self, kv_cache_config: KVCacheConfig) -> None:

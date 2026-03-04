@@ -542,18 +542,7 @@ class Worker(WorkerBase):
 
         cuda_graph_memory_bytes = 0
         if not self.model_config.enforce_eager:
-            # Retry once on OOM - CUDA graph capture can spike memory,
-            # but inductor/triton caches from the first attempt persist
-            # on disk, reducing memory pressure on retry.
-            try:
-                cuda_graph_memory_bytes = self.model_runner.capture_model()
-            except torch.cuda.OutOfMemoryError:
-                logger.warning(
-                    "OOM during CUDA graph capture, freeing memory and retrying once."
-                )
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
-                cuda_graph_memory_bytes = self.model_runner.capture_model()
+            cuda_graph_memory_bytes = self.model_runner.capture_model()
 
         # Reclaim graph capture temporaries before kv cache allocation.
         torch.cuda.synchronize()
