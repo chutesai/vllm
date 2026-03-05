@@ -104,18 +104,17 @@ class Executor(ABC):
 
         # Verify HF cache integrity once in the parent process before
         # spawning workers, so DP/TP workers don't redundantly re-verify.
-        # Only skip for absolute local paths — relative paths like
-        # "org/model" could be HF repo IDs where a local dir was planted
-        # to bypass verification.
-        model = self.model_config.model
-        if not (os.path.isabs(model) and os.path.isdir(model)):
-            from vllm.utils.hf_cache_verify import verify_model_cache
+        # Note: absolute HF cache paths (e.g. from HF_HUB_OFFLINE mode
+        # resolving "org/model" to /cache/hub/models--org--model/snapshots/...)
+        # are still verified — verify_model_cache parses the cache path to
+        # extract repo_id and revision.
+        from vllm.utils.hf_cache_verify import verify_model_cache
 
-            verify_model_cache(
-                model=model,
-                revision=self.model_config.revision,
-                download_dir=self.load_config.download_dir,
-            )
+        verify_model_cache(
+            model=self.model_config.model,
+            revision=self.model_config.revision,
+            download_dir=self.load_config.download_dir,
+        )
 
         self._init_executor()
         self.is_sleeping = False
