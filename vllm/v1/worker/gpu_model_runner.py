@@ -5458,6 +5458,14 @@ class GPUModelRunner(
         max_capture_retries = max(envs.VLLM_CUDAGRAPH_CAPTURE_RETRIES, 0)
         skipped_descriptors: list[BatchDescriptor] = []
 
+        # For TP consensus on OOM: all ranks must agree on retry/skip
+        # decisions to avoid NCCL collective deadlocks.
+        tp_group = get_tp_group()
+        tp_size = tp_group.world_size
+        use_tp_consensus = tp_size > 1
+        if use_tp_consensus:
+            oom_flag = torch.zeros(1, dtype=torch.int32, device=self.device)
+
         # We skip EPLB here since we don't want to record dummy metrics
         for batch_desc in batch_descriptors:
             num_tokens = batch_desc.num_tokens
@@ -5499,6 +5507,7 @@ class GPUModelRunner(
                 # growth happens in warmup (outside `torch.cuda.graph`)
                 # rather than in capture (which can increase graph-pool
                 # memory pressure).
+                local_oom = False
                 lock_workspace()
                 try:
                     # Capture run
@@ -5510,15 +5519,35 @@ class GPUModelRunner(
                         is_graph_capturing=True,
                     )
                     captured = True
-                    break
                 except Exception as e:
                     if not _is_cuda_oom(e):
                         raise
+                    local_oom = True
+                finally:
+                    # Unlock between descriptors so warmups for the next
+                    # descriptor can still grow the workspace.
+                    unlock_workspace()
 
-                    is_last_attempt = capture_attempt >= max_capture_retries
-                    if is_last_attempt:
-                        # All retries exhausted — skip this descriptor
-                        # and fall back to eager for this batch size.
+                # Synchronize OOM status across all TP ranks so all ranks
+                # take the same retry/skip path, preventing NCCL deadlocks.
+                if use_tp_consensus:
+                    oom_flag.fill_(1 if local_oom else 0)
+                    oom_flag = tp_group.all_reduce(oom_flag)
+                    any_rank_oom = oom_flag.item() > 0
+                else:
+                    any_rank_oom = local_oom
+
+                if not any_rank_oom:
+                    # All ranks succeeded — move to next descriptor.
+                    break
+
+                # At least one rank OOMed. All ranks must agree on
+                # retry vs skip to keep control flow synchronized.
+                is_last_attempt = capture_attempt >= max_capture_retries
+                if is_last_attempt:
+                    skipped_descriptors.append(batch_desc)
+                    captured = False
+                    if local_oom:
                         logger.warning(
                             "CUDA graph capture OOM for descriptor "
                             "(mode=%s, num_tokens=%d, "
@@ -5532,8 +5561,17 @@ class GPUModelRunner(
                             num_active_loras,
                             capture_attempt + 1,
                         )
-                        skipped_descriptors.append(batch_desc)
                     else:
+                        logger.info(
+                            "CUDA graph capture succeeded locally for "
+                            "descriptor (mode=%s, num_tokens=%d) but "
+                            "a peer rank OOMed. Skipping to keep all "
+                            "ranks in sync.",
+                            cudagraph_runtime_mode.name,
+                            num_tokens,
+                        )
+                else:
+                    if local_oom:
                         logger.warning(
                             "CUDA graph capture OOM for descriptor "
                             "(mode=%s, num_tokens=%d, "
@@ -5547,14 +5585,24 @@ class GPUModelRunner(
                             capture_attempt + 1,
                             max_capture_retries,
                         )
+                    else:
+                        logger.info(
+                            "CUDA graph capture succeeded locally for "
+                            "descriptor (mode=%s, num_tokens=%d) but "
+                            "a peer rank OOMed. Retrying (%d/%d) to "
+                            "keep all ranks in sync.",
+                            cudagraph_runtime_mode.name,
+                            num_tokens,
+                            capture_attempt + 1,
+                            max_capture_retries,
+                        )
 
-                    torch.cuda.synchronize()
-                    torch.cuda.empty_cache()
-                    gc.collect()
-                finally:
-                    # Unlock between descriptors so warmups for the next
-                    # descriptor can still grow the workspace.
-                    unlock_workspace()
+                # All ranks clean up before retry/next descriptor,
+                # even if they didn't OOM locally, to maximize free
+                # memory for the struggling rank.
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                gc.collect()
 
             if captured:
                 # Synchronize and clear cache after each successful graph
@@ -5566,6 +5614,8 @@ class GPUModelRunner(
 
         # Remove failed descriptors so the dispatcher falls back to
         # CUDAGraphMode.NONE (eager execution) for these batch sizes.
+        # Because all ranks agreed on skip decisions via all_reduce,
+        # cudagraph_keys stay consistent across ranks.
         for desc in skipped_descriptors:
             self.cudagraph_dispatcher.cudagraph_keys[cudagraph_runtime_mode].discard(
                 desc
