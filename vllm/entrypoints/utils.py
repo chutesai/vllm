@@ -5,9 +5,7 @@ import asyncio
 import dataclasses
 import functools
 import os
-import sys
 import time
-import traceback
 from argparse import Namespace
 from collections.abc import AsyncGenerator
 from http import HTTPStatus

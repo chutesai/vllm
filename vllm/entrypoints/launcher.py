@@ -9,7 +9,6 @@ import signal
 import socket
 import stat
 import tempfile
-from http import HTTPStatus
 from typing import Any
 
 import uvicorn

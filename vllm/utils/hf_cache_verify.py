@@ -165,8 +165,7 @@ def _get_repo_info(
     was_offline = _is_hf_offline_mode()
     if was_offline:
         logger.info(
-            "Temporarily disabling HF offline mode for cache "
-            "verification of %s@%s",
+            "Temporarily disabling HF offline mode for cache verification of %s@%s",
             repo_id,
             revision,
         )

@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from collections.abc import Sequence as GenericSequence
 from typing import Any, Final
 
+import jinja2
 import partial_json_parser
 import regex as re
 from cllmv import generate as get_chutes_verification_value
@@ -297,31 +298,35 @@ class OpenAIServingChat(OpenAIServing):
         else:
             tool_dicts = [tool.model_dump() for tool in request.tools]
 
-        if not self.use_harmony:
-            # Common case.
-            error_check_ret = self._validate_chat_template(
-                request_chat_template=request.chat_template,
-                chat_template_kwargs=request.chat_template_kwargs,
-                trust_request_chat_template=self.trust_request_chat_template,
-            )
-            if error_check_ret is not None:
-                return error_check_ret
+        try:
+            if not self.use_harmony:
+                # Common case.
+                error_check_ret = self._validate_chat_template(
+                    request_chat_template=request.chat_template,
+                    chat_template_kwargs=request.chat_template_kwargs,
+                    trust_request_chat_template=self.trust_request_chat_template,
+                )
+                if error_check_ret is not None:
+                    return error_check_ret
 
-            conversation, engine_prompts = await self._preprocess_chat(
-                request,
-                request.messages,
-                default_template=self.chat_template,
-                default_template_content_format=self.chat_template_content_format,
-                default_template_kwargs=self.default_chat_template_kwargs,
-                tool_dicts=tool_dicts,
-                tool_parser=tool_parser,
-            )
-        else:
-            # For GPT-OSS.
-            should_include_tools = tool_dicts is not None
-            conversation, engine_prompts = self._make_request_with_harmony(
-                request, should_include_tools
-            )
+                conversation, engine_prompts = await self._preprocess_chat(
+                    request,
+                    request.messages,
+                    default_template=self.chat_template,
+                    default_template_content_format=self.chat_template_content_format,
+                    default_template_kwargs=self.default_chat_template_kwargs,
+                    tool_dicts=tool_dicts,
+                    tool_parser=tool_parser,
+                )
+            else:
+                # For GPT-OSS.
+                should_include_tools = tool_dicts is not None
+                conversation, engine_prompts = self._make_request_with_harmony(
+                    request, should_include_tools
+                )
+        except (ValueError, TypeError, RuntimeError, jinja2.TemplateError) as e:
+            logger.exception("Error in preprocessing prompt inputs")
+            return self.create_error_response(e)
 
         return conversation, engine_prompts
 
@@ -365,9 +370,14 @@ class OpenAIServingChat(OpenAIServing):
         if raw_request:
             raw_request.state.request_metadata = request_metadata
 
-        lora_request = self._maybe_get_adapters(request, supports_default_mm_loras=True)
-
-        model_name = self.models.model_name(lora_request)
+        try:
+            lora_request = self._maybe_get_adapters(
+                request, supports_default_mm_loras=True
+            )
+            model_name = self.models.model_name(lora_request)
+        except (ValueError, TypeError, RuntimeError) as e:
+            logger.exception("Error preparing request components")
+            return self.create_error_response(e)
 
         # Extract data_parallel_rank from header (router can inject it)
         data_parallel_rank = self._get_data_parallel_rank(raw_request)
@@ -504,7 +514,11 @@ class OpenAIServingChat(OpenAIServing):
                 templated_prompt=templated_prompt if request.echo_prompt else None,
             )
         except GenerationError as e:
-            return self._convert_generation_error_to_response(e)
+            return self.create_error_response(
+                str(e),
+                err_type="InternalServerError",
+                status_code=e.status_code,
+            )
         except ValueError as e:
             return self.create_error_response(e)
 

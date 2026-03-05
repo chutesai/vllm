@@ -112,11 +112,15 @@ class OpenAIServingCompletion(OpenAIServing):
                 "prompt_logprobs is not compatible with prompt embeds."
             )
 
-        engine_prompts = await self._preprocess_completion(
-            request,
-            prompt_input=request.prompt,
-            prompt_embeds=request.prompt_embeds,
-        )
+        try:
+            engine_prompts = await self._preprocess_completion(
+                request,
+                prompt_input=request.prompt,
+                prompt_embeds=request.prompt_embeds,
+            )
+        except (ValueError, TypeError, RuntimeError, jinja2.TemplateError) as e:
+            logger.exception("Error in preprocessing prompt inputs")
+            return self.create_error_response(e)
 
         return engine_prompts
 
