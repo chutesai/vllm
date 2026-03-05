@@ -4,7 +4,8 @@
 # Adapted from
 # https://github.com/lm-sys/FastChat/blob/168ccc29d3f7edc50823016105c024fe2282732a/fastchat/protocol/openai_api_protocol.py
 import time
-from typing import Any, Literal, TypeAlias
+from http import HTTPStatus
+from typing import Any, ClassVar, Literal, TypeAlias
 
 import regex as re
 from pydantic import (
@@ -240,6 +241,14 @@ class DeltaMessage(OpenAIBaseModel):
         if self.reasoning is not None:
             self.reasoning_content = self.reasoning
         return self
+
+
+class GenerationError(Exception):
+    """raised when finish_reason indicates internal server error (500)"""
+
+    def __init__(self, message: str = "Internal server error"):
+        super().__init__(message)
+        self.status_code = HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 ####### Tokens IN <> Tokens OUT #######
