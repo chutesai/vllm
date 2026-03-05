@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 from http import HTTPStatus
 from logging import Logger
 from string import Template
+from typing import TYPE_CHECKING
 
 import regex as re
 from fastapi import Request
