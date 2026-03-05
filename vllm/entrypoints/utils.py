@@ -39,20 +39,10 @@ if TYPE_CHECKING:
     from vllm.entrypoints.openai.completion.protocol import (
         CompletionRequest,
     )
-    from vllm.entrypoints.openai.engine.protocol import (
-        ErrorInfo,
-        ErrorResponse,
-        StreamOptions,
-    )
-    from vllm.entrypoints.openai.models.protocol import LoRAModulePath
 else:
     ChatCompletionRequest = object
     CompletionRequest = object
     EngineClient = object
-    ErrorResponse = object
-    ErrorInfo = object
-    LoRAModulePath = object
-    StreamOptions = object
 
 logger = init_logger(__name__)
 
