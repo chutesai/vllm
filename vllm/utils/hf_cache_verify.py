@@ -139,6 +139,18 @@ def _is_hf_offline_mode() -> bool:
     return os.environ.get("HF_HUB_OFFLINE", "0") in ("1", "true", "True")
 
 
+def _override_hf_offline(offline: bool) -> None:
+    """Override the huggingface_hub cached offline mode flag.
+
+    huggingface_hub caches HF_HUB_OFFLINE as a module-level constant
+    at import time, so just changing the env var isn't enough.
+    We monkey-patch the cached constant directly.
+    """
+    import huggingface_hub.constants as hf_constants
+
+    hf_constants.HF_HUB_OFFLINE = offline
+
+
 def _get_repo_info(
     repo_id: str,
     revision: str,
@@ -146,11 +158,9 @@ def _get_repo_info(
 ) -> dict:
     """Get repo info from HF directly, falling back to chutes proxy.
 
-    If HF_HUB_OFFLINE is set, we temporarily unset it so that the HfApi
-    call can reach the network, then restore it afterwards.  This allows
-    callers to run with offline mode globally (to prevent spurious network
-    requests from transformers/AutoProcessor) while still performing cache
-    verification.
+    If HF_HUB_OFFLINE is set, we temporarily disable it (both the env var
+    and the cached module-level constant in huggingface_hub) so that HfApi
+    can reach the network, then restore everything afterwards.
     """
     was_offline = _is_hf_offline_mode()
     if was_offline:
@@ -161,12 +171,14 @@ def _get_repo_info(
             revision,
         )
         os.environ.pop("HF_HUB_OFFLINE", None)
+        _override_hf_offline(False)
 
     try:
         return _get_repo_info_inner(repo_id, revision, hf_token)
     finally:
         if was_offline:
             os.environ["HF_HUB_OFFLINE"] = "1"
+            _override_hf_offline(True)
 
 
 def _get_repo_info_inner(
