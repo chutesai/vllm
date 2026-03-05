@@ -144,31 +144,53 @@ def _get_repo_info(
     revision: str,
     hf_token: str | None = None,
 ) -> dict:
-    """Get repo info from HF directly, falling back to chutes proxy."""
-    # Skip HF direct if offline mode is enabled — go straight to proxy.
-    hf_error = None
-    if _is_hf_offline_mode():
+    """Get repo info from HF directly, falling back to chutes proxy.
+
+    If HF_HUB_OFFLINE is set, we temporarily unset it so that the HfApi
+    call can reach the network, then restore it afterwards.  This allows
+    callers to run with offline mode globally (to prevent spurious network
+    requests from transformers/AutoProcessor) while still performing cache
+    verification.
+    """
+    was_offline = _is_hf_offline_mode()
+    if was_offline:
         logger.info(
-            "HF offline mode detected, using chutes proxy for %s@%s",
+            "Temporarily disabling HF offline mode for cache "
+            "verification of %s@%s",
             repo_id,
             revision,
         )
-    else:
-        # Try HuggingFace directly first.
-        try:
-            logger.info(
-                "Fetching repo info from HuggingFace for %s@%s",
-                repo_id,
-                revision,
-            )
-            return _fetch_repo_info_from_hf(repo_id, revision, hf_token)
-        except Exception as e:
-            hf_error = e
-            logger.warning(
-                "Failed to fetch repo info from HuggingFace directly: %s. "
-                "Falling back to chutes proxy.",
-                e,
-            )
+        os.environ.pop("HF_HUB_OFFLINE", None)
+
+    try:
+        return _get_repo_info_inner(repo_id, revision, hf_token)
+    finally:
+        if was_offline:
+            os.environ["HF_HUB_OFFLINE"] = "1"
+
+
+def _get_repo_info_inner(
+    repo_id: str,
+    revision: str,
+    hf_token: str | None = None,
+) -> dict:
+    """Get repo info from HF directly, falling back to chutes proxy."""
+    hf_error = None
+    # Try HuggingFace directly first.
+    try:
+        logger.info(
+            "Fetching repo info from HuggingFace for %s@%s",
+            repo_id,
+            revision,
+        )
+        return _fetch_repo_info_from_hf(repo_id, revision, hf_token)
+    except Exception as e:
+        hf_error = e
+        logger.warning(
+            "Failed to fetch repo info from HuggingFace directly: %s. "
+            "Falling back to chutes proxy.",
+            e,
+        )
 
     # Fallback: chutes proxy.
     try:
