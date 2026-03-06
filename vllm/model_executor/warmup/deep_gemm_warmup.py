@@ -6,6 +6,8 @@ DeepGEMM JIT's the kernels. The warmup aims to JIT all the kernels that would
 be used during model execution beforehand.
 """
 
+import gc
+
 import torch
 from tqdm import tqdm
 
@@ -246,6 +248,7 @@ def _deepgemm_fp8_gemm_nt_warmup(
         if pbar is not None:
             pbar.update(1)
 
+    del a1q, a1q_scales, out
     FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
 
 
@@ -335,7 +338,10 @@ def _deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
             if pbar is not None:
                 pbar.update(1)
 
+        del a1q, a1q_scales, out
         GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE.add(w.size())
+
+    del expert_ids
 
 
 def deepgemm_fp8_gemm_nt_warmup(
@@ -422,6 +428,7 @@ def _deepgemm_masked_fp8_gemm_nt_warmup(
             if pbar is not None:
                 pbar.update(1)
 
+        del a1q, a1q_scales, out, cnt, expected_m
         MASKED_FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
 
 
@@ -521,11 +528,19 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
             )
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
+            gc.collect()
             if show_pbar:
                 with tqdm(total=total, desc="DeepGEMM warmup (retry)") as pbar:
                     _do_warmup(pbar)
             else:
                 _do_warmup(None)
+        finally:
+            # Ensure warmup temporaries are released promptly.
+            # The per-function `del` statements handle individual tensors,
+            # but gc.collect() catches any cycles or deferred ref-drops,
+            # which is especially important in TEE environments where
+            # encrypted memory deallocation is slower.
+            gc.collect()
 
     dp_group = get_dp_group()
     tp_group = get_tp_group()

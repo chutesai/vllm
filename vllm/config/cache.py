@@ -45,14 +45,16 @@ class CacheConfig:
     This config has no static default. If left unspecified by the user, it will
     be set in `Platform.check_and_update_config()` based on the current
     platform."""
-    gpu_memory_utilization: float = Field(default=0.9, gt=0, le=1)
+    gpu_memory_utilization: float = Field(default=0.87, gt=0, le=1)
     """The fraction of GPU memory to be used for the model executor, which can
     range from 0 to 1. For example, a value of 0.5 would imply 50% GPU memory
-    utilization. If unspecified, will use the default value of 0.9. This is a
-    per-instance limit, and only applies to the current vLLM instance. It does
-    not matter if you have another vLLM instance running on the same GPU. For
-    example, if you have two vLLM instances running on the same GPU, you can
-    set the GPU memory utilization to 0.5 for each instance."""
+    utilization. If unspecified, will use the default value of 0.87 (lowered
+    from upstream 0.9 to account for CUDA graph memory not being included in
+    profiling and TEE/TDX encrypted memory overhead). This is a per-instance
+    limit, and only applies to the current vLLM instance. It does not matter
+    if you have another vLLM instance running on the same GPU. For example, if
+    you have two vLLM instances running on the same GPU, you can set the GPU
+    memory utilization to 0.5 for each instance."""
     swap_space: float = Field(default=4, ge=0)
     """Size of the CPU swap space per GPU (in GiB)."""
     cache_dtype: CacheDType = "auto"
