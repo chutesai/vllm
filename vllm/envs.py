@@ -197,6 +197,7 @@ if TYPE_CHECKING:
     VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT: int = 480
     VLLM_ENABLE_CUDAGRAPH_GC: bool = False
     VLLM_CUDAGRAPH_CAPTURE_RETRIES: int = 1
+    VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S: int = 0
     VLLM_LOOPBACK_IP: str = ""
     VLLM_ALLOW_CHUNKED_LOCAL_ATTN_WITH_HYBRID_KV_CACHE: bool = True
     VLLM_ENABLE_RESPONSES_API_STORE: bool = False
@@ -1429,6 +1430,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # not disable CUDA graphs.
     "VLLM_CUDAGRAPH_CAPTURE_RETRIES": lambda: int(
         os.getenv("VLLM_CUDAGRAPH_CAPTURE_RETRIES", "1")
+    ),
+    # Timeout in seconds for TP barrier guards around each CUDA graph
+    # capture attempt. Set to 0 to disable this guard.
+    "VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S": lambda: int(
+        os.getenv("VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S", "0")
     ),
     # Used to force set up loopback IP
     "VLLM_LOOPBACK_IP": lambda: os.getenv("VLLM_LOOPBACK_IP", ""),

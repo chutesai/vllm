@@ -11,6 +11,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from copy import copy, deepcopy
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import reduce
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, cast
 
@@ -5463,6 +5464,9 @@ class GPUModelRunner(
         tp_group = get_tp_group()
         tp_size = tp_group.world_size
         use_tp_consensus = tp_size > 1
+        capture_barrier_timeout_s = max(
+            envs.VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S, 0
+        )
         if use_tp_consensus:
             oom_flag = torch.zeros(1, dtype=torch.int32, device=self.device)
 
@@ -5503,6 +5507,24 @@ class GPUModelRunner(
 
             captured = False
             for capture_attempt in range(max_capture_retries + 1):
+                if use_tp_consensus and capture_barrier_timeout_s > 0:
+                    try:
+                        torch.distributed.barrier(
+                            group=tp_group.cpu_group,
+                            timeout=timedelta(seconds=capture_barrier_timeout_s),
+                        )
+                    except Exception as e:
+                        raise RuntimeError(
+                            "TP pre-capture barrier timed out before CUDA graph "
+                            f"capture attempt for descriptor (mode="
+                            f"{cudagraph_runtime_mode.name}, num_tokens={num_tokens}, "
+                            f"attempt={capture_attempt + 1}/"
+                            f"{max_capture_retries + 1}). "
+                            "Consider reducing capture sizes, switching to "
+                            "FULL_DECODE_ONLY, or increasing "
+                            "VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S."
+                        ) from e
+
                 # Lock the reusable workspace during graph capture so any
                 # growth happens in warmup (outside `torch.cuda.graph`)
                 # rather than in capture (which can increase graph-pool
@@ -5510,6 +5532,20 @@ class GPUModelRunner(
                 local_oom = False
                 lock_workspace()
                 try:
+                    if use_tp_consensus:
+                        free_mem, total_mem = torch.cuda.mem_get_info()
+                        logger.info(
+                            "CUDA graph capture attempt %d/%d for descriptor "
+                            "(mode=%s, num_tokens=%d): rank=%d free=%.2f GiB "
+                            "total=%.2f GiB",
+                            capture_attempt + 1,
+                            max_capture_retries + 1,
+                            cudagraph_runtime_mode.name,
+                            num_tokens,
+                            tp_group.rank_in_group,
+                            free_mem / (1 << 30),
+                            total_mem / (1 << 30),
+                        )
                     # Capture run
                     dummy_run(
                         num_tokens,
@@ -5527,6 +5563,25 @@ class GPUModelRunner(
                     # Unlock between descriptors so warmups for the next
                     # descriptor can still grow the workspace.
                     unlock_workspace()
+
+                if use_tp_consensus and capture_barrier_timeout_s > 0:
+                    try:
+                        torch.distributed.barrier(
+                            group=tp_group.cpu_group,
+                            timeout=timedelta(seconds=capture_barrier_timeout_s),
+                        )
+                    except Exception as e:
+                        raise RuntimeError(
+                            "TP post-capture barrier timed out after CUDA graph "
+                            f"capture attempt for descriptor (mode="
+                            f"{cudagraph_runtime_mode.name}, num_tokens={num_tokens}, "
+                            f"attempt={capture_attempt + 1}/"
+                            f"{max_capture_retries + 1}). "
+                            "A rank may be stuck in capture/collective. "
+                            "Consider reducing capture sizes, switching to "
+                            "FULL_DECODE_ONLY, or increasing "
+                            "VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S."
+                        ) from e
 
                 # Synchronize OOM status across all TP ranks so all ranks
                 # take the same retry/skip path, preventing NCCL deadlocks.
@@ -5548,11 +5603,13 @@ class GPUModelRunner(
                     skipped_descriptors.append(batch_desc)
                     captured = False
                     if local_oom:
+                        free_mem, total_mem = torch.cuda.mem_get_info()
                         logger.warning(
                             "CUDA graph capture OOM for descriptor "
                             "(mode=%s, num_tokens=%d, "
                             "uniform_decode=%s, "
-                            "num_active_loras=%d) after %d attempt(s)."
+                            "num_active_loras=%d) after %d attempt(s). "
+                            "rank=%d free=%.2f GiB total=%.2f GiB."
                             " Skipping — will use eager execution for"
                             " this batch size.",
                             cudagraph_runtime_mode.name,
@@ -5560,39 +5617,57 @@ class GPUModelRunner(
                             uniform_decode,
                             num_active_loras,
                             capture_attempt + 1,
+                            tp_group.rank_in_group,
+                            free_mem / (1 << 30),
+                            total_mem / (1 << 30),
                         )
                     else:
+                        free_mem, total_mem = torch.cuda.mem_get_info()
                         logger.info(
                             "CUDA graph capture succeeded locally for "
                             "descriptor (mode=%s, num_tokens=%d) but "
-                            "a peer rank OOMed. Skipping to keep all "
-                            "ranks in sync.",
+                            "a peer rank OOMed. rank=%d free=%.2f GiB "
+                            "total=%.2f GiB. Skipping to keep all ranks "
+                            "in sync.",
                             cudagraph_runtime_mode.name,
                             num_tokens,
+                            tp_group.rank_in_group,
+                            free_mem / (1 << 30),
+                            total_mem / (1 << 30),
                         )
                 else:
                     if local_oom:
+                        free_mem, total_mem = torch.cuda.mem_get_info()
                         logger.warning(
                             "CUDA graph capture OOM for descriptor "
                             "(mode=%s, num_tokens=%d, "
                             "uniform_decode=%s, "
-                            "num_active_loras=%d). Retrying (%d/%d) "
+                            "num_active_loras=%d). rank=%d free=%.2f GiB "
+                            "total=%.2f GiB. Retrying (%d/%d) "
                             "after cleanup.",
                             cudagraph_runtime_mode.name,
                             num_tokens,
                             uniform_decode,
                             num_active_loras,
+                            tp_group.rank_in_group,
+                            free_mem / (1 << 30),
+                            total_mem / (1 << 30),
                             capture_attempt + 1,
                             max_capture_retries,
                         )
                     else:
+                        free_mem, total_mem = torch.cuda.mem_get_info()
                         logger.info(
                             "CUDA graph capture succeeded locally for "
                             "descriptor (mode=%s, num_tokens=%d) but "
-                            "a peer rank OOMed. Retrying (%d/%d) to "
+                            "a peer rank OOMed. rank=%d free=%.2f GiB "
+                            "total=%.2f GiB. Retrying (%d/%d) to "
                             "keep all ranks in sync.",
                             cudagraph_runtime_mode.name,
                             num_tokens,
+                            tp_group.rank_in_group,
+                            free_mem / (1 << 30),
+                            total_mem / (1 << 30),
                             capture_attempt + 1,
                             max_capture_retries,
                         )

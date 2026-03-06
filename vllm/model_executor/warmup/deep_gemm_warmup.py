@@ -6,6 +6,8 @@ DeepGEMM JIT's the kernels. The warmup aims to JIT all the kernels that would
 be used during model execution beforehand.
 """
 
+from datetime import timedelta
+
 import torch
 from tqdm import tqdm
 
@@ -536,19 +538,43 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
     # Check if the batch warmup API is available by doing a no-op probe.
     # warmup_kernels() returns None when the underlying impl is absent.
     has_batch_warmup = warmup_kernels("fp8_gemm_nt", [], 128, 128, 1) is not None
+    if is_global_first_rank():
+        logger.info(
+            "DeepGEMM warmup path: batch_warmup_api=%s, "
+            "needs_serialization=%s (tp=%d, dp=%d).",
+            has_batch_warmup,
+            needs_serialization,
+            tp_group.world_size,
+            dp_group.world_size,
+        )
 
     if needs_serialization and has_batch_warmup:
         # With the batch warmup API all ranks share one cache directory.
         # Rank 0 compiles (writes to cache), then all other ranks load
         # from the already-warm cache after the barrier.
+        # Use a long timeout because kernel compilation can take
+        # 60+ minutes for large MoE models (e.g. 1997 kernels) in
+        # TDX/TEE due to additional overhead of process spawning,
+        # encryption overhead, etc.
+        warmup_barrier_timeout = timedelta(hours=2)
+        if is_global_first_rank():
+            logger.info(
+                "DeepGEMM warmup using shared-cache batch mode "
+                "(rank0 compile, peers wait then load)."
+            )
         if is_global_first_rank():
             _run_warmup(show_pbar=True)
-        dist.barrier()
+        dist.barrier(timeout=warmup_barrier_timeout)
         if not is_global_first_rank():
             _run_warmup(show_pbar=False)  # Fast: cache hits only
     elif needs_serialization:
         # Legacy: serialize across TP and DP ranks to avoid concurrent
         # JIT compilation corrupting the shared .cubin cache on disk.
+        if is_global_first_rank():
+            logger.warning(
+                "DeepGEMM warmup falling back to legacy serialized mode "
+                "(batch warmup API unavailable). Startup may be slow."
+            )
         for dp_rank in range(dp_group.world_size):
             if dp_group.rank_in_group == dp_rank:
                 for tp_rank in range(tp_group.world_size):
