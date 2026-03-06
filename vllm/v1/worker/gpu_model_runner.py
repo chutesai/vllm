@@ -277,18 +277,31 @@ class AsyncGPUModelRunnerOutput(AsyncModelRunnerOutput):
 def _is_cuda_oom(e: BaseException) -> bool:
     """Check if an exception represents a CUDA out-of-memory error.
 
-    Handles ``torch.cuda.OutOfMemoryError`` and
+    Handles ``torch.cuda.OutOfMemoryError``,
     ``torch.AcceleratorError`` with an OOM message (raised by some
-    PyTorch versions on ``capture_end()``).
+    PyTorch versions on ``capture_end()``), and NCCL errors caused by
+    CUDA OOM during graph capture (NCCL's strongstream.cc reports
+    ``"unhandled cuda error"`` when its internal ``cudaMalloc`` fails).
     """
     if isinstance(e, torch.cuda.OutOfMemoryError):
         return True
     accelerator_error_cls = getattr(torch, "AcceleratorError", None)
-    return (
+    if (
         accelerator_error_cls is not None
         and isinstance(e, accelerator_error_cls)
         and "out of memory" in str(e).lower()
-    )
+    ):
+        return True
+    # NCCL internal cudaMalloc failure in strongstream.cc surfaces as
+    # RuntimeError("NCCL error: unhandled cuda error") rather than a
+    # proper OOM exception.
+    if isinstance(e, RuntimeError):
+        msg = str(e).lower()
+        if "nccl error" in msg and (
+            "out of memory" in msg or "unhandled cuda error" in msg
+        ):
+            return True
+    return False
 
 
 def _copy_pooler_output_to_cpu(
@@ -5602,9 +5615,7 @@ class GPUModelRunner(
                 # making subsequent NCCL operations hang indefinitely.
                 if use_tp_consensus:
                     oom_flag.fill_(1 if local_oom else 0)
-                    torch.distributed.all_reduce(
-                        oom_flag, group=tp_group.cpu_group
-                    )
+                    torch.distributed.all_reduce(oom_flag, group=tp_group.cpu_group)
                     any_rank_oom = oom_flag.item() > 0
                 else:
                     any_rank_oom = local_oom
@@ -5728,9 +5739,7 @@ class GPUModelRunner(
             # inference.  Fail fast with a clear error message instead.
             if use_tp_consensus:
                 try:
-                    probe = torch.zeros(
-                        1, dtype=torch.float32, device=self.device
-                    )
+                    probe = torch.zeros(1, dtype=torch.float32, device=self.device)
                     tp_group.all_reduce(probe)
                     del probe
                 except Exception as e:

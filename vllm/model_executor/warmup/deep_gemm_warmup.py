@@ -6,8 +6,6 @@ DeepGEMM JIT's the kernels. The warmup aims to JIT all the kernels that would
 be used during model execution beforehand.
 """
 
-from datetime import timedelta
-
 import torch
 from tqdm import tqdm
 
@@ -504,8 +502,6 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
     if total == 0:
         return
 
-    import torch.distributed as dist
-
     def _run_warmup(show_pbar: bool):
         def _do_warmup(pbar):
             deepgemm_fp8_gemm_nt_warmup(model, max_tokens, pbar)
@@ -559,7 +555,17 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
             )
         if is_global_first_rank():
             _run_warmup(show_pbar=True)
-        dist.barrier()
+        # Use TP/DP group barriers instead of dist.barrier().
+        # dist.barrier() uses the default process group (NCCL backend),
+        # which may trigger lazy NCCL communicator initialization.  That
+        # init requires all ranks to participate simultaneously, but
+        # rank 0 may still be compiling kernels for 30+ minutes
+        # (especially in TEE/TDX environments), causing the TCPStore
+        # handshake to timeout.  GroupCoordinator.barrier() uses the
+        # Gloo (CPU) backend, which is already initialized and does not
+        # require NCCL.
+        tp_group.barrier()
+        dp_group.barrier()
         if not is_global_first_rank():
             _run_warmup(show_pbar=False)  # Fast: cache hits only
     elif needs_serialization:
