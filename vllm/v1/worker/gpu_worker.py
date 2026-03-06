@@ -55,7 +55,11 @@ from vllm.v1.outputs import (
 from vllm.v1.utils import compute_iteration_details, report_usage_stats
 from vllm.v1.worker.utils import is_residual_scattered_for_sp
 from vllm.v1.worker.worker_base import WorkerBase
-from vllm.v1.worker.workspace import init_workspace_manager
+from vllm.v1.worker.workspace import (
+    init_workspace_manager,
+    is_workspace_manager_initialized,
+    reset_workspace_manager,
+)
 
 from ...model_executor.model_loader import TensorizerLoader
 from .gpu.warmup import warmup_kernels
@@ -537,8 +541,21 @@ class Worker(WorkerBase):
         # artifacts, temporary tensors) before CUDA graph capture.
         # This is especially important in TEE environments where memory
         # deallocation may be slower and fragmentation more severe.
+        #
+        # Reset the workspace manager so the oversized warmup workspace
+        # (allocated for max_tokens during profile_run / deep_gemm_warmup)
+        # is freed.  CUDA graph capture only needs workspace for the
+        # capture batch sizes (e.g. 32 tokens), so letting it re-grow
+        # from zero reclaims potentially several GB per rank that would
+        # otherwise cause OOM during graph capture on memory-tight
+        # configurations (e.g. large MoE models on 8×H200 with TP8).
+        if is_workspace_manager_initialized():
+            num_ubatches = 2 if self.vllm_config.parallel_config.enable_dbo else 1
+            reset_workspace_manager()
+            init_workspace_manager(self.device, num_ubatches)
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
+        gc.collect()
 
         cuda_graph_memory_bytes = 0
         if not self.model_config.enforce_eager:

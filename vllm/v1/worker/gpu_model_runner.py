@@ -284,13 +284,11 @@ def _is_cuda_oom(e: BaseException) -> bool:
     if isinstance(e, torch.cuda.OutOfMemoryError):
         return True
     accelerator_error_cls = getattr(torch, "AcceleratorError", None)
-    if (
+    return (
         accelerator_error_cls is not None
         and isinstance(e, accelerator_error_cls)
         and "out of memory" in str(e).lower()
-    ):
-        return True
-    return False
+    )
 
 
 def _copy_pooler_output_to_cpu(
