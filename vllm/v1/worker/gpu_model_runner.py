@@ -5478,6 +5478,21 @@ class GPUModelRunner(
         capture_barrier_timeout_s = max(
             envs.VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S, 0
         )
+        # Prevent indefinite hangs by default when TP ranks diverge during
+        # graph capture OOM handling. Keep explicit user setting authoritative.
+        if (
+            use_tp_consensus
+            and capture_barrier_timeout_s <= 0
+            and not envs.is_set("VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S")
+        ):
+            capture_barrier_timeout_s = 600
+            logger.info_once(
+                "Using default CUDA graph TP barrier timeout=%ss to prevent "
+                "indefinite capture hangs. Override with "
+                "VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S.",
+                capture_barrier_timeout_s,
+                scope="local",
+            )
         if use_tp_consensus:
             # Use a CPU tensor with the gloo (CPU) process group for OOM
             # consensus.  NCCL itself may be in an error state after an OOM
@@ -5520,14 +5535,17 @@ class GPUModelRunner(
                     num_active_loras=num_active_loras,
                 )
 
-            # Free warmup memory before graph capture. The warmup
-            # dummy_run allocates activations and NCCL buffers that stay
-            # in PyTorch's cache.  Flushing here gives NCCL's internal
-            # cudaMalloc (strongstream.cc) more headroom during capture.
-            # Critical in TEE/CC environments where cudaMalloc is
-            # synchronous and memory fragmentation is worse.
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
+            def cleanup_cuda_allocator() -> None:
+                # Clean both allocator cache and stale IPC allocations.
+                # This reduces contiguous-allocation pressure between retries.
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+                gc.collect()
+
+            # Free warmup memory before graph capture. The warmup dummy_run
+            # allocates activations and NCCL buffers that stay in cache.
+            cleanup_cuda_allocator()
 
             captured = False
             for capture_attempt in range(max_capture_retries + 1):
@@ -5703,17 +5721,14 @@ class GPUModelRunner(
                 # All ranks clean up before retry/next descriptor,
                 # even if they didn't OOM locally, to maximize free
                 # memory for the struggling rank.
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
-                gc.collect()
+                cleanup_cuda_allocator()
 
             if captured:
                 # Synchronize and clear cache after each successful graph
                 # capture to ensure memory is fully released before next
                 # capture. This is especially important in TEE environments
                 # where encrypted memory deallocation may be slower.
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
+                cleanup_cuda_allocator()
 
         # Remove failed descriptors so the dispatcher falls back to
         # CUDAGraphMode.NONE (eager execution) for these batch sizes.
@@ -5733,11 +5748,10 @@ class GPUModelRunner(
                 [d.num_tokens for d in skipped_descriptors],
             )
 
-            # Verify NCCL is still functional after graph capture OOMs.
-            # NCCL's internal cudaMalloc failure (strongstream.cc) can
-            # corrupt its state, which would cause silent hangs during
-            # inference.  Fail fast with a clear error message instead.
-            if use_tp_consensus:
+            # Optional NCCL health probe after capture OOMs.
+            # Disabled by default because NCCL can itself hang indefinitely in
+            # this state and prevent startup recovery.
+            if use_tp_consensus and envs.VLLM_CUDAGRAPH_NCCL_HEALTHCHECK_AFTER_OOM:
                 try:
                     probe = torch.zeros(1, dtype=torch.float32, device=self.device)
                     tp_group.all_reduce(probe)
@@ -5753,6 +5767,13 @@ class GPUModelRunner(
                         "NCCL memory pressure, or try "
                         "VLLM_USE_NCCL_SYMM_MEM=0."
                     ) from e
+            elif use_tp_consensus:
+                logger.warning_once(
+                    "Skipping NCCL post-cudagraph-OOM health check to avoid "
+                    "possible startup hangs. Set "
+                    "VLLM_CUDAGRAPH_NCCL_HEALTHCHECK_AFTER_OOM=1 to re-enable.",
+                    scope="local",
+                )
 
         self.maybe_remove_all_loras(self.lora_config)
 

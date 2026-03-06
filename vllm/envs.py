@@ -198,6 +198,7 @@ if TYPE_CHECKING:
     VLLM_ENABLE_CUDAGRAPH_GC: bool = False
     VLLM_CUDAGRAPH_CAPTURE_RETRIES: int = 1
     VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S: int = 0
+    VLLM_CUDAGRAPH_NCCL_HEALTHCHECK_AFTER_OOM: bool = False
     VLLM_LOOPBACK_IP: str = ""
     VLLM_ALLOW_CHUNKED_LOCAL_ATTN_WITH_HYBRID_KV_CACHE: bool = True
     VLLM_ENABLE_RESPONSES_API_STORE: bool = False
@@ -1435,6 +1436,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # capture attempt. Set to 0 to disable this guard.
     "VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S": lambda: int(
         os.getenv("VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S", "0")
+    ),
+    # Whether to run an NCCL all-reduce probe after CUDA graph capture OOM.
+    # Disabled by default to avoid potential indefinite NCCL hangs in the
+    # error state right after OOM.
+    "VLLM_CUDAGRAPH_NCCL_HEALTHCHECK_AFTER_OOM": lambda: bool(
+        int(os.getenv("VLLM_CUDAGRAPH_NCCL_HEALTHCHECK_AFTER_OOM", "0"))
     ),
     # Used to force set up loopback IP
     "VLLM_LOOPBACK_IP": lambda: os.getenv("VLLM_LOOPBACK_IP", ""),
