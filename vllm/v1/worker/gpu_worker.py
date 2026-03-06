@@ -58,7 +58,9 @@ from vllm.v1.worker.worker_base import WorkerBase
 from vllm.v1.worker.workspace import (
     init_workspace_manager,
     is_workspace_manager_initialized,
+    lock_workspace,
     reset_workspace_manager,
+    unlock_workspace,
 )
 
 from ...model_executor.model_loader import TensorizerLoader
@@ -635,12 +637,25 @@ class Worker(WorkerBase):
                 self.scheduler_config.max_num_batched_tokens,
             )
 
+            # Unlock workspace before the post-capture dummy run.
+            # capture_model() locks the workspace at the size needed for
+            # max_cudagraph_capture_size, but max_num_reqs may be larger
+            # (e.g. max_num_seqs=48 > max_cudagraph_capture_size=40),
+            # requiring the workspace to grow beyond the locked size.
+            if is_workspace_manager_initialized():
+                unlock_workspace()
+
             # We skip EPLB here since we don't want to record dummy metrics
             hidden_states, last_hidden_states = self.model_runner._dummy_run(
                 num_tokens=max_num_reqs,
                 skip_eplb=True,
                 cudagraph_runtime_mode=CUDAGraphMode.NONE,
             )
+
+            # Re-lock the workspace at its (potentially larger) final size.
+            if is_workspace_manager_initialized():
+                lock_workspace()
+
             if self.model_runner.is_pooling_model:
                 self.model_runner._dummy_pooler_run(hidden_states)
             else:
