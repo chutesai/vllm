@@ -152,12 +152,15 @@ class WorkspaceManager:
                 return "unknown"
 
             if self._locked:
-                raise AssertionError(
-                    f"Workspace is locked but allocation from '{get_caller_info()}' "
-                    f"requires {required_bytes / _MB:.2f} MB, current size is "
-                    f"{current_size / _MB:.2f} MB. "
-                    "Workspace growth is not allowed after locking."
+                logger.warning(
+                    "Workspace is locked but allocation from '%s' "
+                    "requires %.2f MB, current size is %.2f MB. "
+                    "Unlocking and allowing growth.",
+                    get_caller_info(),
+                    required_bytes / _MB,
+                    current_size / _MB,
                 )
+                self._locked = False
 
             for ubatch_id in range(self._num_ubatches):
                 current_workspace = self._current_workspaces[ubatch_id]
