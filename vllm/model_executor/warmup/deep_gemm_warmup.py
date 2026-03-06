@@ -552,11 +552,6 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
         # With the batch warmup API all ranks share one cache directory.
         # Rank 0 compiles (writes to cache), then all other ranks load
         # from the already-warm cache after the barrier.
-        # Use a long timeout because kernel compilation can take
-        # 60+ minutes for large MoE models (e.g. 1997 kernels) in
-        # TDX/TEE due to additional overhead of process spawning,
-        # encryption overhead, etc.
-        warmup_barrier_timeout = timedelta(hours=2)
         if is_global_first_rank():
             logger.info(
                 "DeepGEMM warmup using shared-cache batch mode "
@@ -564,7 +559,7 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
             )
         if is_global_first_rank():
             _run_warmup(show_pbar=True)
-        dist.barrier(timeout=warmup_barrier_timeout)
+        dist.barrier()
         if not is_global_first_rank():
             _run_warmup(show_pbar=False)  # Fast: cache hits only
     elif needs_serialization:
