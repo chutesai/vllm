@@ -5551,7 +5551,7 @@ class GPUModelRunner(
             for capture_attempt in range(max_capture_retries + 1):
                 if use_tp_consensus and capture_barrier_timeout_s > 0:
                     try:
-                        torch.distributed.barrier(
+                        torch.distributed.monitored_barrier(
                             group=tp_group.cpu_group,
                             timeout=timedelta(seconds=capture_barrier_timeout_s),
                         )
@@ -5608,7 +5608,7 @@ class GPUModelRunner(
 
                 if use_tp_consensus and capture_barrier_timeout_s > 0:
                     try:
-                        torch.distributed.barrier(
+                        torch.distributed.monitored_barrier(
                             group=tp_group.cpu_group,
                             timeout=timedelta(seconds=capture_barrier_timeout_s),
                         )
