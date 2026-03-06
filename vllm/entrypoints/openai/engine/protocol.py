@@ -5,7 +5,7 @@
 # https://github.com/lm-sys/FastChat/blob/168ccc29d3f7edc50823016105c024fe2282732a/fastchat/protocol/openai_api_protocol.py
 import time
 from http import HTTPStatus
-from typing import Any, Literal, TypeAlias
+from typing import Any, ClassVar, Literal, TypeAlias
 
 import regex as re
 from pydantic import (
@@ -16,14 +16,44 @@ from pydantic import (
 )
 
 from vllm.entrypoints.chat_utils import make_tool_call_id
+from vllm.logger import init_logger
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 from vllm.utils.import_utils import resolve_obj_by_qualname
+
+logger = init_logger(__name__)
 
 
 class OpenAIBaseModel(BaseModel):
     # OpenAI API does allow extra fields
     model_config = ConfigDict(extra="allow")
+
+    # Cache class field names
+    field_names: ClassVar[set[str] | None] = None
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def __log_extra_fields__(cls, data, handler):
+        result = handler(data)
+        if not isinstance(data, dict):
+            return result
+        field_names = cls.field_names
+        if field_names is None:
+            # Get all class field names and their potential aliases
+            field_names = set()
+            for field_name, field in cls.model_fields.items():
+                field_names.add(field_name)
+                if alias := getattr(field, "alias", None):
+                    field_names.add(alias)
+            cls.field_names = field_names
+
+        # Compare against both field names and aliases
+        if any(k not in field_names for k in data):
+            logger.debug(
+                "The following fields were present in the request but ignored: %s",
+                data.keys() - field_names,
+            )
+        return result
 
 
 class ErrorInfo(OpenAIBaseModel):
