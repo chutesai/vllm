@@ -5466,7 +5466,11 @@ class GPUModelRunner(
             envs.VLLM_CUDAGRAPH_CAPTURE_BARRIER_TIMEOUT_S, 0
         )
         if use_tp_consensus:
-            oom_flag = torch.zeros(1, dtype=torch.int32, device=self.device)
+            # Use a CPU tensor with the gloo (CPU) process group for OOM
+            # consensus.  NCCL itself may be in an error state after an OOM
+            # during graph capture (strongstream.cc cudaMalloc failure), so
+            # using NCCL all_reduce here would hang.
+            oom_flag = torch.zeros(1, dtype=torch.int32)
 
         # We skip EPLB here since we don't want to record dummy metrics
         for batch_desc in batch_descriptors:
@@ -5502,6 +5506,15 @@ class GPUModelRunner(
                     allow_microbatching=allow_microbatching,
                     num_active_loras=num_active_loras,
                 )
+
+            # Free warmup memory before graph capture. The warmup
+            # dummy_run allocates activations and NCCL buffers that stay
+            # in PyTorch's cache.  Flushing here gives NCCL's internal
+            # cudaMalloc (strongstream.cc) more headroom during capture.
+            # Critical in TEE/CC environments where cudaMalloc is
+            # synchronous and memory fragmentation is worse.
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
 
             captured = False
             for capture_attempt in range(max_capture_retries + 1):
@@ -5583,9 +5596,15 @@ class GPUModelRunner(
 
                 # Synchronize OOM status across all TP ranks so all ranks
                 # take the same retry/skip path, preventing NCCL deadlocks.
+                # Use CPU (gloo) all_reduce because NCCL may be in a broken
+                # state after an OOM during graph capture — NCCL's internal
+                # cudaMalloc failure in strongstream.cc can corrupt its state,
+                # making subsequent NCCL operations hang indefinitely.
                 if use_tp_consensus:
                     oom_flag.fill_(1 if local_oom else 0)
-                    oom_flag = tp_group.all_reduce(oom_flag)
+                    torch.distributed.all_reduce(
+                        oom_flag, group=tp_group.cpu_group
+                    )
                     any_rank_oom = oom_flag.item() > 0
                 else:
                     any_rank_oom = local_oom
@@ -5702,6 +5721,29 @@ class GPUModelRunner(
                 len(skipped_descriptors),
                 [d.num_tokens for d in skipped_descriptors],
             )
+
+            # Verify NCCL is still functional after graph capture OOMs.
+            # NCCL's internal cudaMalloc failure (strongstream.cc) can
+            # corrupt its state, which would cause silent hangs during
+            # inference.  Fail fast with a clear error message instead.
+            if use_tp_consensus:
+                try:
+                    probe = torch.zeros(
+                        1, dtype=torch.float32, device=self.device
+                    )
+                    tp_group.all_reduce(probe)
+                    del probe
+                except Exception as e:
+                    raise RuntimeError(
+                        "NCCL health check failed after CUDA graph capture "
+                        "OOM. NCCL's internal state is likely corrupted by "
+                        "the OOM (strongstream.cc cudaMalloc failure). "
+                        "Inference would hang. To fix: reduce "
+                        "cudagraph_capture_sizes, lower gpu_memory_utilization,"
+                        " set NCCL_BUFFSIZE/NCCL_MAX_NCHANNELS to reduce "
+                        "NCCL memory pressure, or try "
+                        "VLLM_USE_NCCL_SYMM_MEM=0."
+                    ) from e
 
         self.maybe_remove_all_loras(self.lora_config)
 
