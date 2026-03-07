@@ -635,6 +635,7 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
                 tokenizer=tokenizer,
                 model_config=model_config,
             ),
+            media_io_kwargs=params.media_io_kwargs,
         )
 
         # Resolve the chat template for checksum computation
@@ -702,6 +703,7 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
                 tokenizer=tokenizer,
                 model_config=model_config,
             ),
+            media_io_kwargs=params.media_io_kwargs,
         )
 
         # Resolve the chat template for checksum computation
