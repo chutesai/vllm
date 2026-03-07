@@ -38,6 +38,7 @@ from vllm.utils.deep_gemm import (
     warmup_kernels,
 )
 from vllm.utils.math_utils import cdiv
+from vllm.utils.mem_utils import dispose_tensor
 from vllm.utils.platform_utils import num_compute_units
 
 logger = init_logger(__name__)
@@ -248,6 +249,9 @@ def _deepgemm_fp8_gemm_nt_warmup(
         if pbar is not None:
             pbar.update(1)
 
+    dispose_tensor(a1q)
+    dispose_tensor(a1q_scales)
+    dispose_tensor(out)
     del a1q, a1q_scales, out
     FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
 
@@ -338,6 +342,9 @@ def _deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
             if pbar is not None:
                 pbar.update(1)
 
+        dispose_tensor(a1q)
+        dispose_tensor(a1q_scales)
+        dispose_tensor(out)
         del a1q, a1q_scales, out
         GROUPED_FP8_GEMM_NT_CONTIGUOUS_WARMUP_CACHE.add(w.size())
 
@@ -428,6 +435,11 @@ def _deepgemm_masked_fp8_gemm_nt_warmup(
             if pbar is not None:
                 pbar.update(1)
 
+        dispose_tensor(a1q)
+        dispose_tensor(a1q_scales)
+        dispose_tensor(out)
+        dispose_tensor(cnt)
+        dispose_tensor(expected_m)
         del a1q, a1q_scales, out, cnt, expected_m
         MASKED_FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
 

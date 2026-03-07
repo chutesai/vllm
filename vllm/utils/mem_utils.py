@@ -16,6 +16,16 @@ from vllm.platforms import current_platform
 from .mem_constants import GiB_bytes, MiB_bytes
 
 
+def dispose_tensor(x: torch.Tensor) -> None:
+    """Immediately release a tensor's storage back to the caching allocator.
+
+    Unlike ``del``, which only drops the Python reference and relies on GC,
+    this shrinks the underlying storage to zero bytes so the memory is
+    available for reuse right away.
+    """
+    x.set_(torch.empty((0,), device=x.device, dtype=x.dtype))
+
+
 def format_mib(b: int) -> str:
     return f"{round(b / MiB_bytes, 2)}"
 

@@ -495,18 +495,28 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         torch.accelerator.empty_cache()
         start_free_gpu_memory = torch.cuda.mem_get_info()[0]
 
-        with self.maybe_setup_dummy_loras(self.lora_config):
-            self.cudagraph_manager.capture(
-                model=self.model,
-                model_state=self.model_state,
-                input_buffers=self.input_buffers,
-                block_tables=self.block_tables,
-                attn_groups=self.attn_groups,
-                kv_cache_config=self.kv_cache_config,
-                has_lora=self.lora_config is not None,
-            )
-            if self.speculator is not None:
-                self.speculator.capture_model()
+        # Freeze the GC heap during graph capture to prevent the collector
+        # from scanning long-lived objects (model weights, KV cache, etc.)
+        # which adds latency without reclaiming anything useful.
+        gc.freeze()
+        try:
+            with self.maybe_setup_dummy_loras(self.lora_config):
+                self.cudagraph_manager.capture(
+                    model=self.model,
+                    model_state=self.model_state,
+                    input_buffers=self.input_buffers,
+                    block_tables=self.block_tables,
+                    attn_groups=self.attn_groups,
+                    kv_cache_config=self.kv_cache_config,
+                    has_lora=self.lora_config is not None,
+                )
+                if self.speculator is not None:
+                    self.speculator.capture_model()
+        finally:
+            gc.unfreeze()
+
+        # Reclaim any temporary objects created during capture
+        gc.collect()
 
         end_time = time.perf_counter()
         end_free_gpu_memory = torch.cuda.mem_get_info()[0]
