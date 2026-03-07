@@ -1038,6 +1038,10 @@ def try_get_safetensors_metadata(
     *,
     revision: str | None = None,
 ):
+    # get_safetensors_metadata only works with HF repo IDs, not local paths
+    if Path(model).exists():
+        return None
+
     get_safetensors_metadata_partial = partial(
         get_safetensors_metadata, model, revision=revision
     )
