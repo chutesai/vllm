@@ -120,6 +120,19 @@ def _get_unique_name(name: str) -> str:
 _groups: dict[str, Callable[[], "GroupCoordinator | None"]] = {}
 
 
+def _get_subgroup_timeout() -> timedelta | None:
+    """Return subgroup creation timeout derived from runtime config."""
+    from vllm.config import get_current_vllm_config_or_none
+
+    config = get_current_vllm_config_or_none()
+    if config is None:
+        return None
+    timeout_s = config.parallel_config.distributed_timeout_seconds
+    if timeout_s is None:
+        return None
+    return timedelta(seconds=timeout_s)
+
+
 def _register_group(group: "GroupCoordinator") -> None:
     _groups[group.unique_name] = weakref.ref(group)
 
@@ -331,15 +344,19 @@ class GroupCoordinator:
 
         self_device_group = None
         self_cpu_group = None
+        group_timeout = _get_subgroup_timeout()
+        timeout_kwargs = {} if group_timeout is None else {"timeout": group_timeout}
 
         for ranks in group_ranks:
             device_group = torch.distributed.new_group(
-                ranks, backend=torch_distributed_backend
+                ranks, backend=torch_distributed_backend, **timeout_kwargs
             )
             # a group with `gloo` backend, to allow direct coordination between
             # processes through the CPU.
             with suppress_stdout():
-                cpu_group = torch.distributed.new_group(ranks, backend="gloo")
+                cpu_group = torch.distributed.new_group(
+                    ranks, backend="gloo", **timeout_kwargs
+                )
             if self.rank in ranks:
                 self.ranks = ranks
                 self.world_size = len(ranks)

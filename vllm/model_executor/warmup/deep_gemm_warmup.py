@@ -591,8 +591,17 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
         # handshake to timeout.  GroupCoordinator.barrier() uses the
         # Gloo (CPU) backend, which is already initialized and does not
         # require NCCL.
-        tp_group.barrier()
-        dp_group.barrier()
+        try:
+            tp_group.barrier()
+            dp_group.barrier()
+        except RuntimeError as e:
+            if "Timed out waiting" in str(e):
+                raise RuntimeError(
+                    "DeepGEMM warmup barrier timed out. "
+                    "Increase --distributed-timeout-seconds "
+                    "(e.g. 7200 for 2 hours) for TEE/TDX environments."
+                ) from e
+            raise
         if not is_global_first_rank():
             _run_warmup(show_pbar=False)  # Fast: cache hits only
     elif needs_serialization:
@@ -612,7 +621,26 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
                                 dp_rank == 0 and tp_rank == 0 and is_global_first_rank()
                             )
                         )
-                    tp_group.barrier()
-            dp_group.barrier()
+                    try:
+                        tp_group.barrier()
+                    except RuntimeError as e:
+                        if "Timed out waiting" in str(e):
+                            raise RuntimeError(
+                                "DeepGEMM warmup barrier timed out. "
+                                "Increase --distributed-timeout-seconds "
+                                "(e.g. 7200 for 2 hours) for TEE/TDX "
+                                "environments."
+                            ) from e
+                        raise
+            try:
+                dp_group.barrier()
+            except RuntimeError as e:
+                if "Timed out waiting" in str(e):
+                    raise RuntimeError(
+                        "DeepGEMM warmup barrier timed out. "
+                        "Increase --distributed-timeout-seconds "
+                        "(e.g. 7200 for 2 hours) for TEE/TDX environments."
+                    ) from e
+                raise
     else:
         _run_warmup(show_pbar=is_global_first_rank())
