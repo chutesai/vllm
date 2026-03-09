@@ -607,7 +607,7 @@ class AsyncLLM(EngineClient):
         # Request validation error.
         except ValueError as e:
             if self.log_requests:
-                logger.info("Request %s failed (bad request): %s.", request_id, e)
+                logger.info("Request %s failed (bad request).", request_id)
             raise
 
         # Error from input stream generator - propagate directly.
