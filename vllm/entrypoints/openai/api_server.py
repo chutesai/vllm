@@ -36,7 +36,6 @@ from vllm.entrypoints.openai.server_utils import (
     get_uvicorn_log_config,
     http_exception_handler,
     lifespan,
-    log_response,
     validation_exception_handler,
 )
 from vllm.entrypoints.sagemaker.api_router import sagemaker_standards_bootstrap
@@ -282,14 +281,6 @@ def build_app(
         )
 
         app.add_middleware(WebSocketMetricsMiddleware)
-
-    if envs.VLLM_DEBUG_LOG_API_SERVER_RESPONSE:
-        logger.warning(
-            "CAUTION: Enabling log response in the API Server. "
-            "This can include sensitive information and should be "
-            "avoided in production."
-        )
-        app.middleware("http")(log_response)
 
     for middleware in args.middleware:
         module_path, object_name = middleware.rsplit(".", 1)

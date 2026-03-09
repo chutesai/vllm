@@ -119,7 +119,7 @@ class OpenAIServingCompletion(OpenAIServing):
                 prompt_embeds=request.prompt_embeds,
             )
         except (ValueError, TypeError, RuntimeError, jinja2.TemplateError) as e:
-            logger.exception("Error in preprocessing prompt inputs")
+            logger.error("Error in preprocessing prompt inputs: %s", type(e).__name__)
             return self.create_error_response(e)
 
         return engine_prompts

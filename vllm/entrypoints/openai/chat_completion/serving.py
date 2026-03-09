@@ -325,7 +325,7 @@ class OpenAIServingChat(OpenAIServing):
                     request, should_include_tools
                 )
         except (ValueError, TypeError, RuntimeError, jinja2.TemplateError) as e:
-            logger.exception("Error in preprocessing prompt inputs")
+            logger.error("Error in preprocessing prompt inputs: %s", type(e).__name__)
             return self.create_error_response(e)
 
         return conversation, engine_prompts
@@ -376,7 +376,7 @@ class OpenAIServingChat(OpenAIServing):
             )
             model_name = self.models.model_name(lora_request)
         except (ValueError, TypeError, RuntimeError) as e:
-            logger.exception("Error preparing request components")
+            logger.error("Error preparing request components: %s", type(e).__name__)
             return self.create_error_response(e)
 
         # Extract data_parallel_rank from header (router can inject it)

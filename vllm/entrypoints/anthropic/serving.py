@@ -399,11 +399,7 @@ class AnthropicServingMessages(OpenAIServingChat):
         See https://docs.anthropic.com/en/api/messages
         for the API specification. This API mimics the Anthropic messages API.
         """
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Received messages request %s", request.model_dump_json())
         chat_req = self._convert_anthropic_to_openai_request(request)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Convert to OpenAI request %s", chat_req.model_dump_json())
         generator = await self.create_chat_completion(chat_req, raw_request)
 
         if isinstance(generator, ErrorResponse):
