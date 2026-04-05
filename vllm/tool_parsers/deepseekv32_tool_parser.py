@@ -19,9 +19,11 @@ from vllm.entrypoints.openai.engine.protocol import (
     FunctionCall,
     ToolCall,
 )
+from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
 from vllm.logger import init_logger
 from vllm.tokenizers import TokenizerLike
 from vllm.tool_parsers.abstract_tool_parser import (
+    Tool,
     ToolParser,
 )
 
@@ -43,46 +45,17 @@ class DeepSeekV32ToolParser(ToolParser):
     </｜DSML｜function_calls>
     """
 
-    def __init__(self, tokenizer: TokenizerLike):
-        super().__init__(tokenizer)
+    def __init__(self, tokenizer: TokenizerLike, tools: list[Tool] | None = None):
+        super().__init__(tokenizer, tools)
 
         self.prev_tool_call_arr: list[dict] = []
 
-        # Sentinel tokens
-        self.dsml_token: str = "｜DSML｜"
-        self.dsml_start_check: str = "<" + self.dsml_token
+        # Sentinel token
         self.tool_call_start_token: str = "<｜DSML｜function_calls>"
-        self.tool_call_end_token: str = "</｜DSML｜function_calls>"
-        self.invoke_start_prefix: str = "<｜DSML｜invoke name="
-        self.invoke_end_token: str = "</｜DSML｜invoke>"
-        self.parameter_prefix: str = "<｜DSML｜parameter name="
-        self.parameter_end_token: str = "</｜DSML｜parameter>"
 
-        # Streaming state variables
-        self.current_tool_name_sent: bool = False
-        # Override base class type - we use string IDs for tool calls
-        self.current_tool_id: str | None = None  # type: ignore
-        self.streamed_args_for_tool: list[str] = []
+        # Streaming state
         self.is_tool_call_started: bool = False
-        self.failed_count: int = 0
-
-        # Initialize streaming state variables
         self.current_tool_index: int = 0
-        self.invoke_index: int = 0
-        self.header_sent: bool = False
-        self.current_function_name: str | None = None
-        self.current_param_name: str | None = None
-        self.current_param_value: str = ""
-        self.param_count: int = 0
-        self.in_param: bool = False
-        self.in_function: bool = False
-        self.json_started: bool = False
-        self.json_closed: bool = False
-        self.accumulated_params: dict = {}
-        self.streaming_request: ChatCompletionRequest | None = None
-
-        # Enhanced streaming state - reset for each new message
-        self._reset_streaming_state()
 
         # Flexible regex patterns for complete parsing and streaming
         # Optional DSML marker: matches both "<function_calls>"
@@ -164,7 +137,9 @@ class DeepSeekV32ToolParser(ToolParser):
 
         return None
 
-    def adjust_request(self, request):
+    def adjust_request(
+        self, request: ChatCompletionRequest | ResponsesRequest
+    ) -> ChatCompletionRequest | ResponsesRequest:
         request = super().adjust_request(request)
         if request.tools and request.tool_choice != "none":
             # Ensure tool call tokens
@@ -176,26 +151,9 @@ class DeepSeekV32ToolParser(ToolParser):
             request.skip_special_tokens = False
         return request
 
-    def _reset_streaming_state(self):
-        """Reset all streaming state."""
-        self.current_tool_index = 0
-        self.invoke_index = 0
-        self.is_tool_call_started = False
-        self.header_sent = False
-        self.current_tool_id = None
-        self.current_function_name = None
-        self.current_param_name = None
-        self.current_param_value = ""
-        self.param_count = 0
-        self.in_param = False
-        self.in_function = False
-        self.json_started = False
-        self.json_closed = False
-        # Store accumulated parameters for type conversion
-        self.accumulated_params = {}
-        self.streaming_request = None
-        # Clear previous tool call history to avoid state pollution
-        self.prev_tool_call_arr.clear()
+    def _generate_tool_call_id(self) -> str:
+        """Generate a unique tool call ID."""
+        return f"call_{uuid.uuid4().hex[:24]}"
 
     def _parse_invoke_params(self, invoke_str: str) -> dict | None:
         """Parse params from invoke body - supports XML tags or direct JSON."""
@@ -213,6 +171,68 @@ class DeepSeekV32ToolParser(ToolParser):
         for param_name, param_val in self.parameter_complete_regex.findall(invoke_str):
             param_dict[param_name] = param_val
         return param_dict
+
+    def _convert_param_value_checked(self, value: str, param_type: str) -> Any:
+        """Convert parameter value to the correct type."""
+        if value.lower() == "null":
+            return None
+
+        param_type = param_type.lower()
+        if param_type in ["string", "str", "text"]:
+            return value
+        elif param_type in ["integer", "int"]:
+            return int(value)
+        elif param_type in ["number", "float"]:
+            val = float(value)
+            return val if val != int(val) else int(val)
+        elif param_type in ["boolean", "bool"]:
+            value = value.strip()
+            if value.lower() not in ["false", "0", "true", "1"]:
+                raise ValueError("Invalid boolean value")
+            return value.lower() in ["true", "1"]
+        elif param_type in ["object", "array"]:
+            return json.loads(value)
+        else:
+            return json.loads(value)
+
+    def _convert_param_value(self, value: str, param_type: str | list[str]) -> Any:
+        """Convert parameter value to the correct type."""
+        if not isinstance(param_type, list):
+            param_type = [param_type]
+        for current_type in param_type:
+            try:
+                return self._convert_param_value_checked(value, current_type)
+            except Exception:
+                continue
+        # return value as fallback
+        return value
+
+    def _convert_params_with_schema(
+        self,
+        function_name: str,
+        param_dict: dict[str, str],
+    ) -> dict[str, Any]:
+        """Convert raw string param values using the tool schema types."""
+        param_config: dict = {}
+        if self.tools:
+            for tool in self.tools:
+                if (
+                    hasattr(tool, "function")
+                    and tool.function.name == function_name
+                    and hasattr(tool.function, "parameters")
+                ):
+                    schema = tool.function.parameters
+                    if isinstance(schema, dict) and "properties" in schema:
+                        param_config = schema["properties"]
+                    break
+
+        converted: dict[str, Any] = {}
+        for name, value in param_dict.items():
+            param_type = "string"
+            if name in param_config and isinstance(param_config[name], dict):
+                param_type = param_config[name].get("type", "string")
+            converted[name] = self._convert_param_value(value, param_type)
+        return converted
 
     def extract_tool_calls(
         self,
@@ -267,56 +287,53 @@ class DeepSeekV32ToolParser(ToolParser):
                 tools_called=False, tool_calls=[], content=model_output
             )
 
-    def _extract_name(self, name_str: str) -> str:
-        """Extract name from quoted string."""
-        name_str = name_str.strip()
-        if (
-            name_str.startswith('"')
-            and name_str.endswith('"')
-            or name_str.startswith("'")
-            and name_str.endswith("'")
-        ):
-            return name_str[1:-1]
-        return name_str
+    def _reset_streaming_state(self):
+        """Reset all streaming state."""
+        self.current_tool_index = 0
+        self.is_tool_call_started = False
+        self.prev_tool_call_arr.clear()
+        self.streamed_args_for_tool.clear()
 
-    def _extract_param_name(self, input_str: str) -> str:
-        """Extract param name"""
-        start = input_str.find('"') + 1
-        end = input_str.find('"', start)
-        return input_str[start:end] if start > 0 and end > start else input_str
+    def _extract_delta_tool_calls(
+        self,
+        current_text: str,
+        request: ChatCompletionRequest | None,
+    ) -> list[DeltaToolCall]:
+        """Extract DeltaToolCalls from newly completed <invoke> blocks.
 
-    def _convert_param_value(self, value: str, param_type: str) -> Any:
-        """Convert parameter value to the correct type."""
-        if value.lower() == "null":
-            return None
+        Tracks progress via ``current_tool_index`` so each block is
+        extracted exactly once across successive streaming calls.
+        """
+        complete_invokes = self.invoke_complete_regex.findall(current_text)
+        delta_tool_calls: list[DeltaToolCall] = []
 
-        param_type = param_type.lower()
-        if param_type in ["string", "str", "text"]:
-            return value
-        elif param_type in ["integer", "int"]:
-            try:
-                return int(value)
-            except (ValueError, TypeError):
-                return value
-        elif param_type in ["number", "float"]:
-            try:
-                val = float(value)
-                return val if val != int(val) else int(val)
-            except (ValueError, TypeError):
-                return value
-        elif param_type in ["boolean", "bool"]:
-            return value.lower() in ["true", "1"]
-        elif param_type in ["object", "array"]:
-            try:
-                return json.loads(value)
-            except json.JSONDecodeError:
-                return value
-        else:
-            # Try JSON parse first, fallback to string
-            try:
-                return json.loads(value)
-            except json.JSONDecodeError:
-                return value
+        while len(complete_invokes) > self.current_tool_index:
+            invoke_name, invoke_body = complete_invokes[self.current_tool_index]
+            param_dict = self._parse_invoke_params(invoke_body)
+
+            converted = self._convert_params_with_schema(invoke_name, param_dict)
+            args_json = json.dumps(converted, ensure_ascii=False)
+            idx = self.current_tool_index
+            self.current_tool_index += 1
+
+            self.prev_tool_call_arr.append(
+                {"name": invoke_name, "arguments": converted}
+            )
+            self.streamed_args_for_tool.append(args_json)
+
+            delta_tool_calls.append(
+                DeltaToolCall(
+                    index=idx,
+                    id=self._generate_tool_call_id(),
+                    function=DeltaFunctionCall(
+                        name=invoke_name,
+                        arguments=args_json,
+                    ),
+                    type="function",
+                )
+            )
+
+        return delta_tool_calls
 
     def extract_tool_calls_streaming(
         self,
@@ -328,12 +345,16 @@ class DeepSeekV32ToolParser(ToolParser):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest,
     ) -> DeltaMessage | None:
-        """Extract tool calls from streaming model output."""
+        """Extract tool calls from streaming model output.
 
-        # Store request for type conversion
+        Uses a buffer-until-complete-invoke strategy: tokens are buffered
+        until a complete invoke block is available, then parsed and emitted
+        in one shot.
+        """
+
+        # First chunk of a new stream — reset state from prior request.
         if not previous_text:
             self._reset_streaming_state()
-            self.streaming_request = request
 
         # If no delta text, return None unless it's an EOS token after tools
         if not delta_text:

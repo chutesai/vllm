@@ -23,12 +23,13 @@ from vllm.model_executor.layers.fused_moe.batched_deep_gemm_moe import (
 )
 from vllm.model_executor.layers.fused_moe.deep_gemm_moe import DeepGemmExperts
 from vllm.model_executor.layers.fused_moe.deep_gemm_utils import compute_aligned_M
-from vllm.model_executor.layers.fused_moe.layer import FusedMoE, FusedMoEModularMethod
+from vllm.model_executor.layers.fused_moe.layer import FusedMoE
 from vllm.model_executor.layers.fused_moe.triton_deep_gemm_moe import (
     TritonOrDeepGemmExperts,
 )
 from vllm.model_executor.layers.linear import LinearBase
 from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
+from vllm.model_executor.layers.quantization.mxfp8 import Mxfp8OnlineLinearMethod
 from vllm.tracing import instrument
 from vllm.utils.deep_gemm import (
     fp8_gemm_nt,
@@ -151,8 +152,9 @@ def _fp8_linear_may_use_deep_gemm(module: torch.nn.Module) -> bool:
     if not (
         isinstance(module, LinearBase)
         and isinstance(module.quant_method, Fp8LinearMethod)
-        and module.quant_method.block_quant
-        and not module.quant_method.use_marlin
+        and not isinstance(module.quant_method, Mxfp8OnlineLinearMethod)
+        and getattr(module.quant_method, "block_quant", False)
+        and not getattr(module.quant_method, "use_marlin", True)
     ):
         return False
 
@@ -181,13 +183,13 @@ def _fused_moe_grouped_gemm_may_use_deep_gemm(module: torch.nn.Module) -> bool:
     ):
         return False
 
-    if not isinstance(module.quant_method, FusedMoEModularMethod):
-        # modular kernels could invoke deep_gemm_moe_fp8
-        return True
+    moe_kernel = getattr(module.quant_method, "moe_kernel", None)
+    if moe_kernel is None:
+        return False
 
-    # Further check if the ModularKernel implementation uses DeepGemm experts
+    fused_experts = moe_kernel.impl.fused_experts
     return isinstance(
-        module.quant_method.moe_kernel,
+        fused_experts,
         (DeepGemmExperts, TritonOrDeepGemmExperts, BatchedDeepGemmExperts),
     )
 
@@ -272,8 +274,7 @@ def _get_grouped_gemm_params(
     device = w1.device
 
     # Assumes all ranks have the same max_num_batched_tokens
-    max_tokens_across_dp = get_dp_group().world_size * max_tokens
-    max_tokens = min(max_tokens_across_dp, envs.VLLM_FUSED_MOE_CHUNK_SIZE)
+    max_tokens = get_dp_group().world_size * max_tokens
 
     # This is the maximum GroupedGemm M size that we expect to run
     # the grouped_gemm with.

@@ -10,6 +10,7 @@ from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 
+import pydantic
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -19,7 +20,11 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from vllm import envs
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.launcher import terminate_if_errored
-from vllm.entrypoints.openai.engine.protocol import ErrorInfo, ErrorResponse
+from vllm.entrypoints.openai.engine.protocol import (
+    ErrorInfo,
+    ErrorResponse,
+    GenerationError,
+)
 from vllm.entrypoints.utils import create_error_response, sanitize_message
 from vllm.exceptions import VLLMValidationError
 from vllm.logger import init_logger
@@ -193,12 +198,24 @@ async def engine_error_handler(
         server=req.app.state.server,
         engine=req.app.state.engine_client,
     )
-    return Response(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+    err = create_error_response(exc)
+    return JSONResponse(err.model_dump(), status_code=err.error.code)
+
+
+async def generation_error_handler(req: Request, exc: GenerationError):
+    """Handle GenerationError without logging stack traces.
+
+    GenerationError is a known, expected error (e.g. KV cache load failure)
+    that should be returned to the client as a 500 response without polluting
+    server logs with stack traces.
+    """
+    err = create_error_response(exc)
+    return JSONResponse(err.model_dump(), status_code=err.error.code)
 
 
 async def exception_handler(req: Request, exc: Exception):
     if req.app.state.args.log_error_stack:
-        logger.exception(
+        logger.error(
             "Exception caught. Request id: %s",
             req.state.request_metadata.request_id
             if hasattr(req.state, "request_metadata")
