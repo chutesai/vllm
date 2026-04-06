@@ -7,7 +7,6 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from collections.abc import Sequence as GenericSequence
 from typing import TYPE_CHECKING, cast
 
-import jinja2
 from cllmv import generate as get_chutes_verification_value
 from fastapi import Request
 
@@ -467,7 +466,7 @@ class OpenAIServingCompletion(OpenAIServing):
         except GenerationError as e:
             yield f"data: {self._convert_generation_error_to_streaming_response(e)}\n\n"
         except Exception as e:
-            logger.exception("Error in completion stream generator.")
+            logger.error("Error in completion stream generator: %s", type(e).__name__)
             data = self.create_streaming_error_response(e)
             yield f"data: {data}\n\n"
         yield "data: [DONE]\n\n"

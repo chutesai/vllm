@@ -176,11 +176,7 @@ class Qwen3CoderToolParser(ToolParser):
                 return int(param_value)
             except (ValueError, TypeError):
                 logger.debug(
-                    "Parsed value '%s' of parameter '%s' is not an "
-                    "integer in tool '%s', degenerating to string.",
-                    param_value,
-                    param_name,
-                    func_name,
+                    "Parsed param value is not an integer, degenerating to string."
                 )
                 return param_value
         elif param_type.startswith("num") or param_type.startswith("float"):
@@ -193,23 +189,14 @@ class Qwen3CoderToolParser(ToolParser):
                 )
             except (ValueError, TypeError):
                 logger.debug(
-                    "Parsed value '%s' of parameter '%s' is not a float "
-                    "in tool '%s', degenerating to string.",
-                    param_value,
-                    param_name,
-                    func_name,
+                    "Parsed param value is not a float, degenerating to string."
                 )
                 return param_value
         elif param_type in ["boolean", "bool", "binary"]:
             param_value = param_value.lower()
             if param_value not in ["true", "false"]:
                 logger.debug(
-                    "Parsed value '%s' of parameter '%s' is not a boolean "
-                    "(`true` or `false`) in tool '%s', degenerating to "
-                    "false.",
-                    param_value,
-                    param_name,
-                    func_name,
+                    "Parsed param value is not a boolean, degenerating to false."
                 )
             return param_value == "true"
         else:
@@ -223,23 +210,15 @@ class Qwen3CoderToolParser(ToolParser):
                     return param_value
                 except (json.JSONDecodeError, TypeError, ValueError):
                     logger.debug(
-                        "Parsed value '%s' of parameter '%s' cannot be "
-                        "parsed with json.loads in tool '%s', will try "
-                        "other methods to parse it.",
-                        param_value,
-                        param_name,
-                        func_name,
+                        "Parsed param value cannot be parsed with "
+                        "json.loads, will try other methods to parse it."
                     )
             try:
                 param_value = ast.literal_eval(param_value)  # safer
             except (ValueError, SyntaxError, TypeError):
                 logger.debug(
-                    "Parsed value '%s' of parameter '%s' cannot be "
-                    "converted via Python `ast.literal_eval()` in tool "
-                    "'%s', degenerating to string.",
-                    param_value,
-                    param_name,
-                    func_name,
+                    "Parsed param value cannot be converted via "
+                    "Python `ast.literal_eval()`, degenerating to string."
                 )
             return param_value
 
@@ -340,8 +319,10 @@ class Qwen3CoderToolParser(ToolParser):
                 content=content if content else None,
             )
 
-        except Exception:
-            logger.exception("Error in extracting tool call from response.")
+        except Exception as e:
+            logger.error(
+                "Error in extracting tool call from response: %s", type(e).__name__
+            )
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )

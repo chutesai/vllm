@@ -251,7 +251,7 @@ def _try_extract_ast(chat_template: str) -> jinja2.nodes.Template | None:
         jinja_compiled = hf_chat_utils._compile_jinja_template(chat_template)
         return jinja_compiled.environment.parse(chat_template)
     except Exception:
-        logger.exception("Error when compiling Jinja template")
+        logger.error("Error when compiling Jinja template")
         return None
 
 
@@ -270,7 +270,7 @@ def _detect_content_format(
     except StopIteration:
         return "string"
     except Exception:
-        logger.exception("Error when parsing AST of Jinja template")
+        logger.error("Error when parsing AST of Jinja template")
         return default
     else:
         return "openai"
@@ -499,8 +499,9 @@ def safe_apply_chat_template(
     except Exception as e:
         # Log and report any library-related exceptions for further
         # investigation.
-        logger.exception(
-            "An error occurred in `transformers` while applying chat template"
+        logger.error(
+            "Error in `transformers` applying chat template: %s",
+            type(e).__name__,
         )
         raise ValueError(str(e)) from e
 

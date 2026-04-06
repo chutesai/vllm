@@ -315,7 +315,9 @@ class MistralToolParser(ToolParser):
                 raw_tool_call = self.tool_call_regex.findall(tool_content)[0]
                 function_call_arr = json.loads(raw_tool_call)
             except (IndexError, json.JSONDecodeError) as e:
-                logger.exception("Error in extracting tool call from response: %s", e)
+                logger.error(
+                    "Error in extracting tool call from response: %s", type(e).__name__
+                )
                 return ExtractedToolCallInformation(
                     tools_called=False,
                     tool_calls=[],
@@ -375,8 +377,10 @@ class MistralToolParser(ToolParser):
                 return self._extract_tool_calls_streaming(
                     delta_text=delta_text, delta_token_ids=delta_token_ids
                 )
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
             return None
 
     def _extract_tool_calls_streaming(

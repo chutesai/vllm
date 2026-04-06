@@ -123,30 +123,25 @@ class Llama3JsonToolParser(ToolParser):
                     )
                 except KeyError as e:
                     # Missing required key
-                    missing_key = str(e).strip("'\"")
-                    logger.exception(
-                        "Couldn't extract tool call from JSON response. "
-                        "Required key '%s' not present. "
-                        "Returning output in content with empty tool calls.",
-                        missing_key,
+                    logger.error(
+                        "Couldn't extract tool call from JSON response: %s",
+                        type(e).__name__,
                     )
                     return ExtractedToolCallInformation(
                         tools_called=False, tool_calls=[], content=model_output
                     )
-                except Exception:
+                except Exception as e:
                     # Any other error during parsing
-                    logger.exception(
-                        "Error in extracting tool call from response. "
-                        "Returning output in content with empty tool calls"
+                    logger.error(
+                        "Error in extracting tool call from response: %s",
+                        type(e).__name__,
                     )
                     return ExtractedToolCallInformation(
                         tools_called=False, tool_calls=[], content=model_output
                     )
         except TimeoutError:
             logger.warning("Regex timeout occurred when matching tool call pattern.")
-            logger.debug(
-                "Regex timeout occurred when matching user input: %s", model_output
-            )
+            logger.debug("Regex timeout in tool call extraction")
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )
@@ -237,7 +232,6 @@ class Llama3JsonToolParser(ToolParser):
                         sent = len(self.streamed_args_for_tool[self.current_tool_id])
                         argument_diff = cur_args_json[sent:]
 
-                        logger.debug("got arguments diff: %s", argument_diff)
                         delta = DeltaMessage(
                             tool_calls=[
                                 DeltaToolCall(
@@ -323,8 +317,10 @@ class Llama3JsonToolParser(ToolParser):
             self.prev_tool_call_arr = tool_call_arr
             return delta
 
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
             logger.debug(
                 "Skipping chunk as a result of tool streaming extraction error"
             )

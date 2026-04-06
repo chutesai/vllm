@@ -681,7 +681,9 @@ class OpenAISpeechToText(OpenAIServing):
             )
 
         except Exception as e:
-            logger.exception("Error in %s stream generator.", self.task_type)
+            logger.error(
+                "Error in %s stream generator: %s", self.task_type, type(e).__name__
+            )
             data = self.create_streaming_error_response(e)
             yield f"data: {data}\n\n"
         # Send the final done message after all response.n are finished

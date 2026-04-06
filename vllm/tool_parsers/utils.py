@@ -395,10 +395,7 @@ def compute_tool_delta(
     new_call_args = new_call.function.arguments
     if withheld_suffix:
         if not new_call_args.endswith(withheld_suffix):
-            msg = (
-                f"Tool call arguments '{new_call_args}' do not end with "
-                f"expected withheld suffix '{withheld_suffix}'"
-            )
+            msg = "Tool call arguments do not end with expected withheld suffix"
             logger.error(msg)
             raise ValueError(msg)
         new_call_args = new_call_args[: -len(withheld_suffix)]

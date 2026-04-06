@@ -414,8 +414,10 @@ class Gemma4ToolParser(ToolParser):
                 content=content if content else None,
             )
 
-        except Exception:
-            logger.exception("Error extracting tool calls from Gemma4 response")
+        except Exception as e:
+            logger.error(
+                "Error extracting tool calls from Gemma4 response: %s", type(e).__name__
+            )
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )
@@ -451,8 +453,10 @@ class Gemma4ToolParser(ToolParser):
                 current_text=current_text,
                 delta_text=delta_text,
             )
-        except Exception:
-            logger.exception("Error in Gemma4 streaming tool call extraction")
+        except Exception as e:
+            logger.error(
+                "Error in Gemma4 streaming tool call extraction: %s", type(e).__name__
+            )
             return None
 
     def _extract_streaming(
@@ -663,10 +667,7 @@ class Gemma4ToolParser(ToolParser):
         try:
             current_args = _parse_gemma4_args(raw_args_str)
         except Exception:
-            logger.debug(
-                "Could not parse partial Gemma4 args yet: %s",
-                raw_args_str[:100],
-            )
+            logger.debug("Could not parse partial Gemma4 args yet")
             return None
 
         if not current_args:

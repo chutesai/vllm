@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import logging
 import math
 from functools import cached_property
 
@@ -10,6 +11,8 @@ from transformers import BatchFeature
 from transformers.image_utils import ImageInput
 from transformers.processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["Ovis2_5Processor"]
 IMAGE_TOKEN = "<image>"
@@ -313,9 +316,7 @@ class Ovis2_5Processor(ProcessorMixin):
         3. The aspect ratio of the image is maintained as closely as possible.
         """
         if height < factor or width < factor:
-            print(
-                f"height:{height} or width:{width} must be larger than factor:{factor}"
-            )
+            logger.debug("Image dimension smaller than factor: %d", factor)
             if height < width:
                 width = round(factor / height * width)
                 height = factor
@@ -324,10 +325,7 @@ class Ovis2_5Processor(ProcessorMixin):
                 width = factor
 
         elif max(height, width) / min(height, width) > 200:
-            print(
-                f"absolute aspect ratio must be smaller than 200, "
-                f"got {max(height, width) / min(height, width)}"
-            )
+            logger.debug("Image aspect ratio exceeds 200")
             if height > width:
                 height = 200 * width
             else:

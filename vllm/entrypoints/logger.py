@@ -42,21 +42,13 @@ class RequestLogger:
         lora_request: LoRARequest | None,
     ) -> None:
         if logger.isEnabledFor(logging.DEBUG):
-            max_log_len = self.max_log_len
-            if max_log_len is not None:
-                if prompt is not None:
-                    prompt = prompt[:max_log_len]
-
-                if prompt_token_ids is not None:
-                    prompt_token_ids = prompt_token_ids[:max_log_len]
-
             logger.debug(
-                "Request %s details: prompt: %r, "
-                "prompt_token_ids: %s, "
+                "Request %s details: prompt_len: %s, "
+                "prompt_token_ids_len: %s, "
                 "prompt_embeds shape: %s.",
                 request_id,
-                prompt,
-                prompt_token_ids,
+                len(prompt) if prompt is not None else None,
+                len(prompt_token_ids) if prompt_token_ids is not None else None,
                 prompt_embeds.shape if prompt_embeds is not None else None,
             )
 
@@ -76,25 +68,16 @@ class RequestLogger:
         is_streaming: bool = False,
         delta: bool = False,
     ) -> None:
-        max_log_len = self.max_log_len
-        if max_log_len is not None:
-            if outputs is not None:
-                outputs = outputs[:max_log_len]
-
-            if output_token_ids is not None:
-                # Convert to list and apply truncation
-                output_token_ids = list(output_token_ids)[:max_log_len]
-
         stream_info = ""
         if is_streaming:
             stream_info = " (streaming delta)" if delta else " (streaming complete)"
 
         logger.info(
-            "Generated response %s%s: output: %r, "
-            "output_token_ids: %s, finish_reason: %s",
+            "Generated response %s%s: output_len: %s, "
+            "output_token_count: %s, finish_reason: %s",
             request_id,
             stream_info,
-            outputs,
-            output_token_ids,
+            len(outputs) if outputs is not None else None,
+            len(output_token_ids) if output_token_ids is not None else None,
             finish_reason,
         )

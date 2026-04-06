@@ -10,8 +10,7 @@ from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 
-import pydantic
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.datastructures import URL, Headers, MutableHeaders
@@ -187,11 +186,12 @@ async def engine_error_handler(
     """
 
     if req.app.state.args.log_error_stack:
-        logger.exception(
-            "Engine Exception caught. Request id: %s",
+        logger.error(
+            "Engine Exception caught. Request id: %s, type: %s",
             req.state.request_metadata.request_id
             if hasattr(req.state, "request_metadata")
             else None,
+            type(exc).__name__,
         )
 
     terminate_if_errored(
@@ -228,11 +228,12 @@ async def exception_handler(req: Request, exc: Exception):
 
 async def http_exception_handler(req: Request, exc: HTTPException):
     if req.app.state.args.log_error_stack:
-        logger.exception(
-            "HTTPException caught. Request id: %s",
+        logger.error(
+            "HTTPException caught. Request id: %s, status: %s",
             req.state.request_metadata.request_id
             if hasattr(req.state, "request_metadata")
             else None,
+            exc.status_code,
         )
     err = ErrorResponse(
         error=ErrorInfo(
@@ -246,7 +247,7 @@ async def http_exception_handler(req: Request, exc: HTTPException):
 
 async def validation_exception_handler(req: Request, exc: RequestValidationError):
     if req.app.state.args.log_error_stack:
-        logger.exception(
+        logger.error(
             "RequestValidationError caught. Request id: %s",
             req.state.request_metadata.request_id
             if hasattr(req.state, "request_metadata")

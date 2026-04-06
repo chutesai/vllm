@@ -831,7 +831,7 @@ class OpenAIServing:
             try:
                 tool_parser = tool_parser_cls(tokenizer, request.tools)
             except RuntimeError as e:
-                logger.exception("Error in tool parser creation.")
+                logger.error("Error in tool parser creation: %s", type(e).__name__)
                 raise e
             tool_call_info = tool_parser.extract_tool_calls(
                 content if content is not None else "",

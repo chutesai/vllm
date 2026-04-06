@@ -385,8 +385,8 @@ class MinimaxM2ToolParser(ToolParser):
                 tools_called=True, tool_calls=tool_calls, content=content
             )
 
-        except Exception:
-            logger.exception("Error extracting tool calls")
+        except Exception as e:
+            logger.error("Error extracting tool calls: %s", type(e).__name__)
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )

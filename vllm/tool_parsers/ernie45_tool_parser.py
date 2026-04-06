@@ -110,8 +110,10 @@ class Ernie45ToolParser(ToolParser):
                     content=content if content else None,
                 )
 
-            except Exception:
-                logger.exception("Error in extracting tool call from response.")
+            except Exception as e:
+                logger.error(
+                    "Error in extracting tool call from response: %s", type(e).__name__
+                )
                 return ExtractedToolCallInformation(
                     tools_called=False, tool_calls=[], content=model_output
                 )
@@ -163,7 +165,6 @@ class Ernie45ToolParser(ToolParser):
                 content = content.lstrip("\n")
 
             return DeltaMessage(content=content if content else None)
-        logger.debug("cur_text = %s", cur_text)
         end_idx = cur_text.find(self.tool_call_end_token)
         if end_idx != -1:
             if self.current_tool_id == -1:

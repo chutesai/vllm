@@ -94,7 +94,7 @@ class GraniteToolParser(ToolParser):
             )
 
         except Exception as e:
-            logger.error("Error in extracting tool call from response %s", e)
+            logger.error("Error extracting tool call: %s", type(e).__name__)
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )
@@ -168,7 +168,6 @@ class GraniteToolParser(ToolParser):
                         sent = len(self.streamed_args_for_tool[self.current_tool_id])
                         argument_diff = cur_args_json[sent:]
 
-                        logger.debug("got arguments diff: %s", argument_diff)
                         delta = DeltaMessage(
                             tool_calls=[
                                 DeltaToolCall(

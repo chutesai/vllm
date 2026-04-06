@@ -61,9 +61,10 @@ class OpenAIToolParser(ToolParser):
                         # remove any extra newlines or other odd formatting
                         try:
                             tool_args = json.dumps(json.loads(msg_text))
-                        except json.JSONDecodeError:
-                            logger.exception(
-                                "Error decoding JSON tool call from response."
+                        except json.JSONDecodeError as e:
+                            logger.error(
+                                "Error decoding JSON tool call from response: %s",
+                                type(e).__name__,
                             )
                             tool_args = msg_text
                     else:

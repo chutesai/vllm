@@ -59,8 +59,6 @@ class Phi4MiniJsonToolParser(ToolParser):
         """
         Extract the tool calls from a complete model response.
         """
-        logger.debug("Model output: %s", model_output)
-
         pattern = r"functools\[(.*?)\]"
         matches = re.search(pattern, model_output, re.DOTALL)
 

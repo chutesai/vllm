@@ -150,8 +150,11 @@ class FunctionGemmaToolParser(ToolParser):
                 tools_called=False, tool_calls=[], content=model_output
             )
 
-        except Exception:
-            logger.exception("Error extracting tool calls from FunctionGemma response")
+        except Exception as e:
+            logger.error(
+                "Error extracting tool calls from FunctionGemma response: %s",
+                type(e).__name__,
+            )
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )
@@ -321,6 +324,8 @@ class FunctionGemmaToolParser(ToolParser):
                 return DeltaMessage(content=delta_text)
             return None
 
-        except Exception:
-            logger.exception("Error in streaming tool call extraction")
+        except Exception as e:
+            logger.error(
+                "Error in streaming tool call extraction: %s", type(e).__name__
+            )
             return None

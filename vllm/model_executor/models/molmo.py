@@ -1229,7 +1229,6 @@ class MolmoMultiModalProcessor(BaseMultiModalProcessor[MolmoProcessingInfo]):
             dict(tokens=tokens),
         )
         prompt_ids = processed_data.pop("input_ids").tolist()
-        print(prompt_ids, len(prompt_ids))
 
         return prompt_ids
 

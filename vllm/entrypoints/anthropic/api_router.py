@@ -69,7 +69,7 @@ async def create_messages(request: AnthropicMessagesRequest, raw_request: Reques
     try:
         generator = await handler.create_messages(request, raw_request)
     except Exception as e:
-        logger.exception("Error in create_messages: %s", e)
+        logger.error("Error in create_messages: %s", type(e).__name__)
         return JSONResponse(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
             content=AnthropicErrorResponse(
@@ -85,7 +85,6 @@ async def create_messages(request: AnthropicMessagesRequest, raw_request: Reques
 
     elif isinstance(generator, AnthropicMessagesResponse):
         resp = generator.model_dump(exclude_none=True)
-        logger.debug("Anthropic Messages Response: %s", resp)
         return JSONResponse(content=resp)
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
@@ -115,7 +114,7 @@ async def count_tokens(request: AnthropicCountTokensRequest, raw_request: Reques
     try:
         response = await handler.count_tokens(request, raw_request)
     except Exception as e:
-        logger.exception("Error in count_tokens: %s", e)
+        logger.error("Error in count_tokens: %s", type(e).__name__)
         return JSONResponse(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
             content=AnthropicErrorResponse(

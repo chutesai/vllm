@@ -10,7 +10,6 @@ from collections.abc import Sequence as GenericSequence
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Final
 
-import jinja2
 import partial_json_parser
 import regex as re
 from cllmv import generate as get_chutes_verification_value
@@ -364,8 +363,8 @@ class OpenAIServingChat(OpenAIServing):
 
         # Extract template and prompt metadata for checksums
         # (stored by the renderer in the engine_prompt dict)
-        chat_template_str: str | None = engine_prompts[0].get("_chat_template")  # type: ignore[assignment]
-        templated_prompt: str | None = engine_prompts[0].get("_templated_prompt")  # type: ignore[assignment]
+        chat_template_str: str | None = engine_inputs[0].get("_chat_template")  # type: ignore[assignment]
+        templated_prompt: str | None = engine_inputs[0].get("_templated_prompt")  # type: ignore[assignment]
 
         # Compute SHA256 checksums
         template_sha256 = (
@@ -642,7 +641,7 @@ class OpenAIServingChat(OpenAIServing):
             else:
                 tool_parsers = [None] * num_choices
         except Exception as e:
-            logger.exception("Error in tool parser creation.")
+            logger.error("Error in tool parser creation: %s", type(e).__name__)
             data = self.create_streaming_error_response(e)
             yield f"data: {data}\n\n"
             yield "data: [DONE]\n\n"
@@ -1401,7 +1400,9 @@ class OpenAIServingChat(OpenAIServing):
         except GenerationError as e:
             yield f"data: {self._convert_generation_error_to_streaming_response(e)}\n\n"
         except Exception as e:
-            logger.exception("Error in chat completion stream generator.")
+            logger.error(
+                "Error in chat completion stream generator: %s", type(e).__name__
+            )
             data = self.create_streaming_error_response(e)
             yield f"data: {data}\n\n"
         # Send the final done message after all response.n are finished

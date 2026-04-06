@@ -100,7 +100,7 @@ def _try_parse_json(s: str) -> str:
         except json.JSONDecodeError:
             pass
 
-    logger.warning("Could not parse or repair JSON: %s", s[:200])
+    logger.warning("Could not parse or repair JSON (len=%d)", len(s))
     return s
 
 
@@ -350,8 +350,10 @@ class KimiK2ToolParser(ToolParser):
                     tool_calls=[],
                     content=_sanitize_content(model_output),
                 )
-            except Exception:
-                logger.exception("Error in extracting tool call from response.")
+            except Exception as e:
+                logger.error(
+                    "Error in extracting tool call from response: %s", type(e).__name__
+                )
                 # Sanitize before returning to avoid marker leakage
                 return ExtractedToolCallInformation(
                     tools_called=False,
@@ -369,8 +371,7 @@ class KimiK2ToolParser(ToolParser):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest,
     ) -> DeltaMessage | None:
-        logger.debug("delta_text: %s", delta_text)
-        logger.debug("delta_token_ids: %s", delta_token_ids)
+        logger.debug("delta_token_ids count: %d", len(delta_token_ids))
 
         # Auto-reset: if this is the first delta of a new request and we
         # have stale state from a previous (possibly aborted) stream, reset.
@@ -570,8 +571,7 @@ class KimiK2ToolParser(ToolParser):
                     if remaining:
                         logger.debug(
                             "Finishing tool and found diff that had not "
-                            "been streamed yet: %s",
-                            remaining,
+                            "been streamed yet"
                         )
                         self.streamed_args_for_tool[self.current_tool_id] = (
                             full_arguments
@@ -697,12 +697,9 @@ class KimiK2ToolParser(ToolParser):
             )
             cur_arguments = current_tool_call.get("arguments")
 
-            logger.debug("diffing old arguments: %s", prev_arguments)
-            logger.debug("against new ones: %s", cur_arguments)
-
             # case -- no arguments have been created yet. skip sending a delta.
             if not cur_arguments and not prev_arguments:
-                logger.debug("Skipping text %s - no arguments", delta_text)
+                logger.debug("Skipping - no arguments")
                 delta = None
 
             # case -- prev arguments are defined, but non are now.
@@ -738,7 +735,6 @@ class KimiK2ToolParser(ToolParser):
                     and cur_arguments.startswith(prev_arguments)
                 ):
                     delta_arguments = cur_arguments[len(prev_arguments) :]
-                    logger.debug("got diff %s", delta_text)
 
                     delta = DeltaMessage(
                         tool_calls=[
@@ -768,6 +764,8 @@ class KimiK2ToolParser(ToolParser):
 
             return delta
 
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
             return None  # do not stream a delta. skip this token ID.

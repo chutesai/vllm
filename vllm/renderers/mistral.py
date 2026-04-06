@@ -41,8 +41,9 @@ def safe_apply_chat_template(
     except Exception as e:
         # Log and report any library-related exceptions for further
         # investigation.
-        logger.exception(
-            "An error occurred in `mistral_common` while applying chat template"
+        logger.error(
+            "Error in `mistral_common` applying chat template: %s",
+            type(e).__name__,
         )
         raise ValueError(str(e)) from e
 

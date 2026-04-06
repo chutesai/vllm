@@ -6238,11 +6238,11 @@ class GPUModelRunner(
                 # different from the case where `FULL` implies capture
                 # attention while `PIECEWISE` implies no attention.
 
-                dummy_run(
-                    num_tokens,
+                self._dummy_run(
+                    batch_desc.num_tokens,
                     cudagraph_runtime_mode=CUDAGraphMode.NONE,
                     allow_microbatching=allow_microbatching,
-                    num_active_loras=num_active_loras,
+                    num_active_loras=batch_desc.num_active_loras,
                 )
 
             def cleanup_cuda_allocator() -> None:
@@ -6267,9 +6267,10 @@ class GPUModelRunner(
                         )
                     except Exception as e:
                         raise RuntimeError(
-                            "TP pre-capture barrier timed out before CUDA graph "
-                            f"capture attempt for descriptor (mode="
-                            f"{cudagraph_runtime_mode.name}, num_tokens={num_tokens}, "
+                            "TP pre-capture barrier timed out before "
+                            "CUDA graph capture attempt for descriptor "
+                            f"(mode={cudagraph_runtime_mode.name}, "
+                            f"num_tokens={batch_desc.num_tokens}, "
                             f"attempt={capture_attempt + 1}/"
                             f"{max_capture_retries + 1}). "
                             "Consider reducing capture sizes, switching to "
@@ -6293,17 +6294,17 @@ class GPUModelRunner(
                             capture_attempt + 1,
                             max_capture_retries + 1,
                             cudagraph_runtime_mode.name,
-                            num_tokens,
+                            batch_desc.num_tokens,
                             tp_group.rank_in_group,
                             free_mem / (1 << 30),
                             total_mem / (1 << 30),
                         )
                     # Capture run
-                    dummy_run(
-                        num_tokens,
+                    self._dummy_run(
+                        batch_desc.num_tokens,
                         cudagraph_runtime_mode=cudagraph_runtime_mode,
                         allow_microbatching=allow_microbatching,
-                        num_active_loras=num_active_loras,
+                        num_active_loras=batch_desc.num_active_loras,
                         is_graph_capturing=True,
                     )
                     captured = True
@@ -6324,9 +6325,10 @@ class GPUModelRunner(
                         )
                     except Exception as e:
                         raise RuntimeError(
-                            "TP post-capture barrier timed out after CUDA graph "
-                            f"capture attempt for descriptor (mode="
-                            f"{cudagraph_runtime_mode.name}, num_tokens={num_tokens}, "
+                            "TP post-capture barrier timed out after "
+                            "CUDA graph capture attempt for descriptor "
+                            f"(mode={cudagraph_runtime_mode.name}, "
+                            f"num_tokens={batch_desc.num_tokens}, "
                             f"attempt={capture_attempt + 1}/"
                             f"{max_capture_retries + 1}). "
                             "A rank may be stuck in capture/collective. "
@@ -6369,9 +6371,9 @@ class GPUModelRunner(
                             " Skipping — will use eager execution for"
                             " this batch size.",
                             cudagraph_runtime_mode.name,
-                            num_tokens,
+                            batch_desc.num_tokens,
                             uniform_decode,
-                            num_active_loras,
+                            batch_desc.num_active_loras,
                             capture_attempt + 1,
                             tp_group.rank_in_group,
                             free_mem / (1 << 30),
@@ -6386,7 +6388,7 @@ class GPUModelRunner(
                             "total=%.2f GiB. Skipping to keep all ranks "
                             "in sync.",
                             cudagraph_runtime_mode.name,
-                            num_tokens,
+                            batch_desc.num_tokens,
                             tp_group.rank_in_group,
                             free_mem / (1 << 30),
                             total_mem / (1 << 30),
@@ -6402,9 +6404,9 @@ class GPUModelRunner(
                             "total=%.2f GiB. Retrying (%d/%d) "
                             "after cleanup.",
                             cudagraph_runtime_mode.name,
-                            num_tokens,
+                            batch_desc.num_tokens,
                             uniform_decode,
-                            num_active_loras,
+                            batch_desc.num_active_loras,
                             tp_group.rank_in_group,
                             free_mem / (1 << 30),
                             total_mem / (1 << 30),
@@ -6420,7 +6422,7 @@ class GPUModelRunner(
                             "total=%.2f GiB. Retrying (%d/%d) to "
                             "keep all ranks in sync.",
                             cudagraph_runtime_mode.name,
-                            num_tokens,
+                            batch_desc.num_tokens,
                             tp_group.rank_in_group,
                             free_mem / (1 << 30),
                             total_mem / (1 << 30),
@@ -6484,7 +6486,6 @@ class GPUModelRunner(
                     "VLLM_CUDAGRAPH_NCCL_HEALTHCHECK_AFTER_OOM=1 to re-enable.",
                     scope="local",
                 )
-
 
         self.maybe_remove_all_loras(self.lora_config)
 

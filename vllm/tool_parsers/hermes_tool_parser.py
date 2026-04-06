@@ -135,8 +135,10 @@ class Hermes2ProToolParser(ToolParser):
                     content=content if content else None,
                 )
 
-            except Exception:
-                logger.exception("Error in extracting tool call from response.")
+            except Exception as e:
+                logger.error(
+                    "Error in extracting tool call from response: %s", type(e).__name__
+                )
                 return ExtractedToolCallInformation(
                     tools_called=False, tool_calls=[], content=model_output
                 )
@@ -291,6 +293,8 @@ class Hermes2ProToolParser(ToolParser):
 
             return None
 
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
             return None

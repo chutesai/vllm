@@ -228,9 +228,10 @@ class MinimaxToolParser(ToolParser):
                 content=content.strip() if content.strip() else None,
             )
 
-        except Exception:
-            logger.exception(
-                "An unexpected error occurred during tool call extraction."
+        except Exception as e:
+            logger.error(
+                "An unexpected error occurred during tool call extraction: %s",
+                type(e).__name__,
             )
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
@@ -771,9 +772,10 @@ class MinimaxToolParser(ToolParser):
                 tool_content, current_tools_count
             ) or self._handle_tool_args_streaming(tool_content, current_tools_count)
 
-        except Exception:
-            logger.exception(
-                "An unexpected error occurred ", "during streaming tool call handling."
+        except Exception as e:
+            logger.error(
+                "An unexpected error occurred during streaming tool call handling: %s",
+                type(e).__name__,
             )
             return None
 

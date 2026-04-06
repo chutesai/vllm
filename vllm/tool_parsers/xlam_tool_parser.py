@@ -180,7 +180,7 @@ class xLAMToolParser(ToolParser):
             )
 
         except Exception as e:
-            logger.exception("Error extracting tool calls: %s", str(e))
+            logger.error("Error extracting tool calls: %s", type(e).__name__)
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )
@@ -554,6 +554,6 @@ class xLAMToolParser(ToolParser):
             return None
 
         except Exception as e:
-            logger.exception(f"Error in streaming tool calls: {e}")
+            logger.error("Error in streaming tool calls: %s", type(e).__name__)
             # If we encounter an error, just return the delta text as regular content
             return DeltaMessage(content=delta_text)

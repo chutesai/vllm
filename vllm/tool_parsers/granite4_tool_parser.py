@@ -143,8 +143,10 @@ class Granite4ToolParser(ToolParser):
             msg.tools_called = bool(tool_calls)
             msg.tool_calls = tool_calls
             msg.content = content or None
-        except Exception:
-            logger.exception("Error in extracting tool call from response.")
+        except Exception as e:
+            logger.error(
+                "Error in extracting tool call from response: %s", type(e).__name__
+            )
         return msg
 
     def _tool_extraction_step(
@@ -251,6 +253,8 @@ class Granite4ToolParser(ToolParser):
             if msg.content or msg.tool_calls:
                 return msg
 
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
         return None

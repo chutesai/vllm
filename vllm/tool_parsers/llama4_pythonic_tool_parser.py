@@ -87,9 +87,7 @@ class Llama4PythonicToolParser(ToolParser):
             )
         except TimeoutError:
             logger.warning("Regex timeout occurred when matching tool call pattern.")
-            logger.debug(
-                "Regex timeout occurred when matching user input: %s", model_output
-            )
+            logger.debug("Regex timeout in tool call extraction")
 
         if not is_tool_call_pattern:
             return ExtractedToolCallInformation(
@@ -112,8 +110,10 @@ class Llama4PythonicToolParser(ToolParser):
                 )
             else:
                 raise UnexpectedAstError("Tool output must be a list of function calls")
-        except Exception:
-            logger.exception("Error in extracting tool call from response.")
+        except Exception as e:
+            logger.error(
+                "Error in extracting tool call from response: %s", type(e).__name__
+            )
             # Treat as regular text
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
@@ -206,8 +206,10 @@ class Llama4PythonicToolParser(ToolParser):
                 return DeltaMessage(content="")
             else:
                 return None
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
             logger.debug(
                 "Skipping chunk as a result of tool streaming extraction error"
             )

@@ -774,7 +774,7 @@ class AnthropicServingMessages(OpenAIServingChat):
                     yield wrap_data_with_event(data, "error")
 
         except Exception as e:
-            logger.exception("Error in message stream converter.")
+            logger.error("Error in message stream converter: %s", type(e).__name__)
             error_response = AnthropicStreamEvent(
                 type="error",
                 error=AnthropicError(type="internal_error", message=str(e)),

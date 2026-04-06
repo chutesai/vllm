@@ -70,13 +70,13 @@ class RealtimeConnection:
                 except json.JSONDecodeError:
                     await self.send_error("Invalid JSON", "invalid_json")
                 except Exception as e:
-                    logger.exception("Error handling event: %s", e)
+                    logger.error("Error handling event: %s", type(e).__name__)
                     await self.send_error(str(e), "processing_error")
         except WebSocketDisconnect:
             logger.debug("WebSocket disconnected: %s", self.connection_id)
             self._is_connected = False
         except Exception as e:
-            logger.exception("Unexpected error in connection: %s", e)
+            logger.error("Unexpected error in connection: %s", type(e).__name__)
         finally:
             await self.cleanup()
 
@@ -101,7 +101,7 @@ class RealtimeConnection:
         """
         event_type = event.get("type")
         if event_type == "session.update":
-            logger.debug("Session updated: %s", event)
+            logger.debug("Session updated for connection: %s", self.connection_id)
             model = event.get("model")
             if model is None:
                 await self.send_error("Missing required field: model", "invalid_event")
@@ -260,7 +260,7 @@ class RealtimeConnection:
                 self.audio_queue.get_nowait()
 
         except Exception as e:
-            logger.exception("Error in generation: %s", e)
+            logger.error("Error in generation: %s", type(e).__name__)
             await self.send_error(str(e), "processing_error")
 
     async def send(

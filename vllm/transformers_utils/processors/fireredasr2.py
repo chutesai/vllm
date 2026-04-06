@@ -61,7 +61,7 @@ class KaldifeatFbank:
         for i in range(fbank.num_frames_ready):
             feat.append(fbank.get_frame(i))
         if len(feat) == 0:
-            print("Check data, len(feat) == 0", wav_np, flush=True)
+            logger.warning("Empty features after waveform processing")
             return np.zeros((0, self.opts.mel_opts.num_bins))
         feat = np.vstack(feat)
         return feat

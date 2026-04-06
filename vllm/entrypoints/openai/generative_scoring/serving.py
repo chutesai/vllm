@@ -225,7 +225,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
         try:
             lora_request = self._maybe_get_adapters(request)  # type: ignore[arg-type]
         except (ValueError, TypeError, RuntimeError) as e:
-            logger.exception("Error preparing request components")
+            logger.error("Error preparing request components: %s", type(e).__name__)
             return self.create_error_response(e)
 
         base_id = self._base_request_id(raw_request, default=request.request_id)
@@ -238,7 +238,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
                 request, tokenizer, self.model_config.max_model_len
             )
         except (ValueError, TypeError) as e:
-            logger.exception("Error building prompts")
+            logger.error("Error building prompts: %s", type(e).__name__)
             return self.create_error_response(e)
 
         # Create sampling params for scoring
@@ -293,7 +293,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")
         except Exception as e:
-            logger.exception("Error during generation")
+            logger.error("Error during generation: %s", type(e).__name__)
             return self.create_error_response(e)
 
         # Process results to extract label token probabilities

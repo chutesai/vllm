@@ -114,8 +114,10 @@ class DeepSeekV3ToolParser(ToolParser):
                     content=content if content else None,
                 )
 
-            except Exception:
-                logger.exception("Error in extracting tool call from response.")
+            except Exception as e:
+                logger.error(
+                    "Error in extracting tool call from response: %s", type(e).__name__
+                )
                 return ExtractedToolCallInformation(
                     tools_called=False, tool_calls=[], content=model_output
                 )
@@ -130,8 +132,7 @@ class DeepSeekV3ToolParser(ToolParser):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest,
     ) -> DeltaMessage | None:
-        logger.debug("delta_text: %s", delta_text)
-        logger.debug("delta_token_ids: %s", delta_token_ids)
+        logger.debug("delta_token_ids count: %d", len(delta_token_ids))
         # check to see if we should be streaming a tool call - is there a
         if self.tool_calls_start_token_id not in current_token_ids:
             logger.debug("No tool call tokens found!")
@@ -223,9 +224,7 @@ class DeepSeekV3ToolParser(ToolParser):
                     end_loc = delta_text.rindex('"}')
                     diff = delta_text[:end_loc] + '"}'
                     logger.debug(
-                        "Finishing tool and found diff that had not "
-                        "been streamed yet: %s",
-                        diff,
+                        "Finishing tool and found diff that had not been streamed yet"
                     )
                     self.streamed_args_for_tool[self.current_tool_id] += diff
                     return DeltaMessage(
@@ -322,12 +321,9 @@ class DeepSeekV3ToolParser(ToolParser):
             )
             cur_arguments = current_tool_call.get("arguments")
 
-            logger.debug("diffing old arguments: %s", prev_arguments)
-            logger.debug("against new ones: %s", cur_arguments)
-
             # case -- no arguments have been created yet. skip sending a delta.
             if not cur_arguments and not prev_arguments:
-                logger.debug("Skipping text %s - no arguments", delta_text)
+                logger.debug("Skipping - no arguments")
                 delta = None
 
             # case -- prev arguments are defined, but non are now.
@@ -363,7 +359,6 @@ class DeepSeekV3ToolParser(ToolParser):
                     and cur_arguments.startswith(prev_arguments)
                 ):
                     delta_arguments = cur_arguments[len(prev_arguments) :]
-                    logger.debug("got diff %s", delta_text)
 
                     delta = DeltaMessage(
                         tool_calls=[
@@ -388,6 +383,8 @@ class DeepSeekV3ToolParser(ToolParser):
 
             return delta
 
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
             return None  # do not stream a delta. skip this token ID.

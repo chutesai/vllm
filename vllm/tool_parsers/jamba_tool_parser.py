@@ -118,8 +118,10 @@ class JambaToolParser(ToolParser):
                     content=content if (len(content) > 0 and content != " ") else None,
                 )
 
-            except Exception:
-                logger.exception("Error in extracting tool call from response.")
+            except Exception as e:
+                logger.error(
+                    "Error in extracting tool call from response: %s", type(e).__name__
+                )
                 return ExtractedToolCallInformation(
                     tools_called=False, tool_calls=[], content=model_output
                 )
@@ -264,14 +266,10 @@ class JambaToolParser(ToolParser):
                     delta = None
                 elif cur_arguments and not prev_arguments:
                     cur_arguments_json = json.dumps(cur_arguments, ensure_ascii=False)
-                    logger.debug("finding %s in %s", new_text, cur_arguments_json)
 
                     arguments_delta = cur_arguments_json[
                         : cur_arguments_json.index(new_text) + len(new_text)
                     ]
-                    logger.debug(
-                        "First tokens in arguments received: %s", arguments_delta
-                    )
                     delta = DeltaMessage(
                         tool_calls=[
                             DeltaToolCall(
@@ -287,16 +285,9 @@ class JambaToolParser(ToolParser):
                 elif cur_arguments and prev_arguments:
                     cur_args_json = json.dumps(cur_arguments, ensure_ascii=False)
                     prev_args_json = json.dumps(prev_arguments, ensure_ascii=False)
-                    logger.debug(
-                        "Searching for diff between \n%s\n%s",
-                        cur_args_json,
-                        prev_args_json,
-                    )
-
                     argument_diff = extract_intermediate_diff(
                         cur_args_json, prev_args_json
                     )
-                    logger.debug("got arguments diff: %s", argument_diff)
                     delta = DeltaMessage(
                         tool_calls=[
                             DeltaToolCall(
@@ -320,8 +311,10 @@ class JambaToolParser(ToolParser):
             self.prev_tool_call_arr = tool_call_arr
             return delta
 
-        except Exception:
-            logger.exception("Error trying to handle streaming tool call.")
+        except Exception as e:
+            logger.error(
+                "Error trying to handle streaming tool call: %s", type(e).__name__
+            )
             logger.debug(
                 "Skipping chunk as a result of tool streaming extraction error"
             )
