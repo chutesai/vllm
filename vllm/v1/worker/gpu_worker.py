@@ -558,7 +558,7 @@ class Worker(WorkerBase):
         # initialization (e.g. LMCache).  Without this, errors from the
         # previous phase surface as confusing failures inside DeepGEMM
         # warmup (CUDA_ERROR_ILLEGAL_ADDRESS from cuModuleLoad).
-        torch.cuda.synchronize()
+        torch.accelerator.synchronize()
 
         warmup_sizes: list[int] = []
 
@@ -601,8 +601,8 @@ class Worker(WorkerBase):
             logger.warning(
                 "OOM during kernel warmup, freeing memory and retrying once."
             )
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
+            torch.accelerator.synchronize()
+            torch.accelerator.empty_cache()
             kernel_warmup(self)
 
         # Reclaim temporary memory from kernel warmup (JIT compilation
@@ -621,8 +621,8 @@ class Worker(WorkerBase):
             num_ubatches = 2 if self.vllm_config.parallel_config.enable_dbo else 1
             reset_workspace_manager()
             init_workspace_manager(self.device, num_ubatches)
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
+        torch.accelerator.synchronize()
+        torch.accelerator.empty_cache()
         gc.collect()
 
         cuda_graph_memory_bytes = 0
@@ -630,8 +630,8 @@ class Worker(WorkerBase):
             cuda_graph_memory_bytes = self.model_runner.capture_model()
 
         # Reclaim graph capture temporaries before kv cache allocation.
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
+        torch.accelerator.synchronize()
+        torch.accelerator.empty_cache()
 
         # Compare actual vs estimated CUDA graph memory (if we did profiling)
         if (

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from transformers import PreTrainedTokenizerBase
 
@@ -9,6 +9,7 @@ from vllm.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
 from vllm.entrypoints.openai.engine.protocol import DeltaMessage
+from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
 from vllm.logger import init_logger
 from vllm.reasoning import ReasoningParser
 from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
@@ -37,6 +38,7 @@ class GLM47ReasoningParser(ReasoningParser):
         enable_thinking = bool(chat_kwargs.pop("enable_thinking", True))
         thinking = thinking or enable_thinking
 
+        self._parser: ReasoningParser
         if thinking:
             self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
         else:
@@ -46,7 +48,7 @@ class GLM47ReasoningParser(ReasoningParser):
         return self._parser.is_reasoning_end(input_ids)
 
     def is_reasoning_end_streaming(
-        self, input_ids: list[int], delta_ids: list[int]
+        self, input_ids: Sequence[int], delta_ids: Iterable[int]
     ) -> bool:
         return self._parser.is_reasoning_end_streaming(input_ids, delta_ids)
 
@@ -54,7 +56,7 @@ class GLM47ReasoningParser(ReasoningParser):
         return self._parser.extract_content_ids(input_ids)
 
     def extract_reasoning(
-        self, model_output: str, request: ChatCompletionRequest
+        self, model_output: str, request: ChatCompletionRequest | ResponsesRequest
     ) -> tuple[str | None, str | None]:
         return self._parser.extract_reasoning(model_output, request)
 

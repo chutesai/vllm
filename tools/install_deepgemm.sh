@@ -96,7 +96,7 @@ rm -rf -- build dist *.egg-info 2>/dev/null || true
 
 # Build wheel
 echo "🏗️  Building DeepGEMM wheel..."
-uv run python setup.py bdist_wheel
+python3 setup.py bdist_wheel
 
 # If --wheel-dir was specified, copy wheels there and exit
 if [ -n "$WHEEL_DIR" ]; then
@@ -117,7 +117,7 @@ if command -v uv >/dev/null 2>&1; then
     fi
 else
     echo "Installing DeepGEMM wheel using pip..."
-    uv pip install dist/*.whl
+    python3 -m pip install dist/*.whl
 fi
 
 popd

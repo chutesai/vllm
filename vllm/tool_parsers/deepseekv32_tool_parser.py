@@ -107,10 +107,6 @@ class DeepSeekV32ToolParser(ToolParser):
             "vLLM Successfully import tool parser %s !", self.__class__.__name__
         )
 
-    def _generate_tool_call_id(self) -> str:
-        """Generate a unique tool call ID."""
-        return f"call_{uuid.uuid4().hex[:24]}"
-
     def _get_partial_tool_start(self, text: str) -> str | None:
         """
         Check if text ends with a partial tool call start tag.

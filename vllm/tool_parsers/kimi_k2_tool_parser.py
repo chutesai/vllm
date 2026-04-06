@@ -489,8 +489,7 @@ class KimiK2ToolParser(ToolParser):
                 # breaking potential delimiter characters.
                 if self.in_tool_section and cur_tool_start_count == 0:
                     logger.debug(
-                        "In tool section before first tool, suppressing: %s",
-                        delta_text,
+                        "In tool section before first tool, suppressing"
                     )
                     # Return empty delta to maintain iterator contract
                     return DeltaMessage(content="")

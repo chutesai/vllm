@@ -617,7 +617,6 @@ def download_weights_from_hf(
                 model_name_or_path,
                 time_taken,
             )
-
     return hf_folder
 
 

@@ -6213,6 +6213,8 @@ class GPUModelRunner(
             # using NCCL all_reduce here would hang.
             oom_flag = torch.zeros(1, dtype=torch.int32)
 
+        force_attention = cudagraph_runtime_mode == CUDAGraphMode.FULL
+
         # We skip EPLB here since we don't want to record dummy metrics
         for batch_desc in batch_descriptors:
             # We currently only capture ubatched graphs when its a FULL
@@ -6241,16 +6243,20 @@ class GPUModelRunner(
                 self._dummy_run(
                     batch_desc.num_tokens,
                     cudagraph_runtime_mode=CUDAGraphMode.NONE,
+                    force_attention=force_attention,
+                    uniform_decode=uniform_decode,
                     allow_microbatching=allow_microbatching,
+                    skip_eplb=True,
+                    remove_lora=False,
                     num_active_loras=batch_desc.num_active_loras,
                 )
 
             def cleanup_cuda_allocator() -> None:
                 # Clean both allocator cache and stale IPC allocations.
                 # This reduces contiguous-allocation pressure between retries.
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
+                torch.accelerator.synchronize()
+                torch.accelerator.empty_cache()
+                torch.cuda.ipc_collect()  # CUDA-specific, no accelerator API
                 gc.collect()
 
             # Free warmup memory before graph capture. The warmup dummy_run
@@ -6303,7 +6309,10 @@ class GPUModelRunner(
                     self._dummy_run(
                         batch_desc.num_tokens,
                         cudagraph_runtime_mode=cudagraph_runtime_mode,
+                        uniform_decode=uniform_decode,
                         allow_microbatching=allow_microbatching,
+                        skip_eplb=True,
+                        remove_lora=False,
                         num_active_loras=batch_desc.num_active_loras,
                         is_graph_capturing=True,
                     )

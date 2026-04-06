@@ -854,7 +854,7 @@ class BaseRenderer(ABC, Generic[_T]):
         # Carry forward metadata keys for checksum computation
         for key in ("_chat_template", "_templated_prompt"):
             if key in prompt:
-                engine_input[key] = prompt[key]  # type: ignore[literal-required]
+                engine_input[key] = prompt[key]  # type: ignore[literal-required,typeddict-unknown-key,typeddict-item]
 
         return engine_input
 
@@ -881,7 +881,7 @@ class BaseRenderer(ABC, Generic[_T]):
         # Carry forward metadata keys for checksum computation
         for key in ("_chat_template", "_templated_prompt"):
             if key in prompt:
-                engine_input[key] = prompt[key]  # type: ignore[literal-required]
+                engine_input[key] = prompt[key]  # type: ignore[literal-required,typeddict-unknown-key,typeddict-item]
 
         return engine_input
 

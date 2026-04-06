@@ -542,8 +542,8 @@ def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):
                 "OOM during DeepGEMM warmup, freeing memory "
                 "and retrying once (JIT cache should be warm)."
             )
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
+            torch.accelerator.synchronize()
+            torch.accelerator.empty_cache()
             gc.collect()
             if show_pbar:
                 with tqdm(total=total, desc="DeepGEMM warmup (retry)") as pbar:
