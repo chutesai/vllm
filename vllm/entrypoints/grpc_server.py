@@ -181,7 +181,7 @@ def main():
     try:
         uvloop.run(serve_grpc(args))
     except Exception as e:
-        logger.exception("Server failed: %s", e)
+        logger.error("Server failed: %s", type(e).__name__)
         sys.exit(1)
 
 

@@ -168,6 +168,21 @@ class OpenAIServingCompletion(OpenAIServing):
                     self.default_sampling_params,
                 )
 
+            # Eagerly validate sampling params (especially structured
+            # outputs) so errors are returned as 400 Bad Request instead
+            # of surfacing mid-stream or as 500 errors.
+            if isinstance(sampling_params, SamplingParams):
+                try:
+                    ip = self.input_processor
+                    sampling_params.verify(
+                        ip.model_config,
+                        ip.speculative_config,
+                        ip.structured_outputs_config,
+                        ip.tokenizer,
+                    )
+                except (ValueError, TypeError) as e:
+                    return self.create_error_response(e)
+
             request_id_item = f"{request_id}-{i}"
 
             self._log_inputs(

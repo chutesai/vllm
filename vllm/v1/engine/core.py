@@ -406,6 +406,21 @@ class EngineCore:
             scheduler_output, model_output
         )
 
+        # Merge error outputs for requests whose grammar compilation
+        # failed during scheduling.
+        grammar_failed = self.scheduler.take_grammar_failed_reqs()
+        if grammar_failed:
+            for req_id, client_index in grammar_failed:
+                error_output = EngineCoreOutput(
+                    req_id, [], finish_reason=FinishReason.BAD_REQUEST
+                )
+                if client_index in engine_core_outputs:
+                    engine_core_outputs[client_index].outputs.append(error_output)
+                else:
+                    engine_core_outputs[client_index] = EngineCoreOutputs(
+                        outputs=[error_output]
+                    )
+
         return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 
     def post_step(self, model_executed: bool) -> None:
@@ -509,6 +524,20 @@ class EngineCore:
         engine_core_outputs = self.scheduler.update_from_output(
             scheduler_output, model_output
         )
+
+        # Merge error outputs for grammar compilation failures.
+        grammar_failed = self.scheduler.take_grammar_failed_reqs()
+        if grammar_failed:
+            for req_id, client_index in grammar_failed:
+                error_output = EngineCoreOutput(
+                    req_id, [], finish_reason=FinishReason.BAD_REQUEST
+                )
+                if client_index in engine_core_outputs:
+                    engine_core_outputs[client_index].outputs.append(error_output)
+                else:
+                    engine_core_outputs[client_index] = EngineCoreOutputs(
+                        outputs=[error_output]
+                    )
 
         # NOTE(nick): We can either handle the deferred tasks here or save
         # in a field and do it immediately once step_with_batch_queue is
@@ -1105,9 +1134,11 @@ class EngineCoreProc(EngineCore):
             raise
         except Exception as e:
             if engine_core is None:
-                logger.exception("EngineCore failed to start.")
+                logger.error("EngineCore failed to start: %s", type(e).__name__)
             else:
-                logger.exception("EngineCore encountered a fatal error.")
+                logger.error(
+                    "EngineCore encountered a fatal error: %s", type(e).__name__
+                )
                 engine_core._send_engine_dead()
             raise e
         finally:
@@ -1305,8 +1336,8 @@ class EngineCoreProc(EngineCore):
                 return
             output.result = UtilityResult(result)
         except Exception as e:
-            logger.exception("Invocation of %s method failed", name)
-            output.failure_message = f"Call to {name} method failed: {str(e)}"
+            logger.error("Invocation of %s method failed: %s", name, type(e).__name__)
+            output.failure_message = f"Call to {name} method failed: {type(e).__name__}"
         enqueue_output(output)
 
     @staticmethod
@@ -1412,8 +1443,8 @@ class EngineCoreProc(EngineCore):
                         req: EngineCoreRequest = add_request_decoder.decode(data_frames)
                         try:
                             request = self.preprocess_add_request(req)
-                        except Exception:
-                            self._handle_request_preproc_error(req)
+                        except Exception as exc:
+                            self._handle_request_preproc_error(req, exc)
                             continue
                     else:
                         request = generic_decoder.decode(data_frames)
@@ -1495,14 +1526,27 @@ class EngineCoreProc(EngineCore):
                     # Limit the number of buffers to reuse.
                     reuse_buffers.append(buffer)
 
-    def _handle_request_preproc_error(self, request: EngineCoreRequest) -> None:
+    def _handle_request_preproc_error(
+        self, request: EngineCoreRequest, exc: Exception | None = None
+    ) -> None:
         """Log and return a request-scoped error response for exceptions raised
         from the add request preprocessing in the input socket processing thread.
         """
-        logger.exception(
-            "Unexpected error pre-processing request %s", request.request_id
+        logger.error(
+            "Error pre-processing request %s: %s",
+            request.request_id,
+            type(exc).__name__ if exc else "unknown",
         )
-        self._send_error_outputs_to_client([request.request_id], request.client_index)
+        # Classify user-input errors (ValueError, TypeError) as bad
+        # request so the API layer returns 400 instead of 500.
+        if isinstance(exc, (ValueError, TypeError)):
+            self._send_bad_request_outputs_to_client(
+                [request.request_id], request.client_index
+            )
+        else:
+            self._send_error_outputs_to_client(
+                [request.request_id], request.client_index
+            )
 
     def pause_scheduler(
         self, mode: PauseMode = "abort", clear_cache: bool = True
@@ -1564,6 +1608,13 @@ class EngineCoreProc(EngineCore):
         self, req_ids: list[str], client_index: int
     ) -> None:
         self._send_finish_outputs_to_client(req_ids, client_index, FinishReason.ERROR)
+
+    def _send_bad_request_outputs_to_client(
+        self, req_ids: list[str], client_index: int
+    ) -> None:
+        self._send_finish_outputs_to_client(
+            req_ids, client_index, FinishReason.BAD_REQUEST
+        )
 
     def _send_abort_outputs(self, aborted_reqs: list[tuple[str, int]]) -> None:
         # TODO(nick) this will be moved inside the scheduler
@@ -1979,8 +2030,8 @@ class EngineCoreActorMixin:
         except SystemExit:
             logger.debug("EngineCore exiting.")
             raise
-        except Exception:
-            logger.exception("EngineCore encountered a fatal error.")
+        except Exception as e:
+            logger.error("EngineCore encountered a fatal error: %s", type(e).__name__)
             raise
         finally:
             self.shutdown()  # type: ignore[attr-defined]

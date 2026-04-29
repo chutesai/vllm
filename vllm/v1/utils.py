@@ -319,7 +319,9 @@ def wait_for_completion_or_failure(
     except KeyboardInterrupt:
         logger.info("Received KeyboardInterrupt, shutting down API servers...")
     except Exception as e:
-        logger.exception("Exception occurred while running API servers: %s", str(e))
+        logger.error(
+            "Exception occurred while running API servers: %s", type(e).__name__
+        )
         raise
 
 

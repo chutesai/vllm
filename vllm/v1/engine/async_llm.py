@@ -615,7 +615,7 @@ class AsyncLLM(EngineClient):
             if q is not None:
                 await self.abort(q.request_id, internal=True)
             if self.log_requests:
-                logger.info("Request %s failed (input error): %s.", request_id, e)
+                logger.info("Request %s failed (input error).", request_id)
             raise e.cause from e
 
         # Unexpected error in the generate() task (possibly recoverable).
@@ -623,15 +623,9 @@ class AsyncLLM(EngineClient):
             if q is not None:
                 await self.abort(q.request_id, internal=True)
             if self.log_requests:
-                try:
-                    s = f"{e.__class__.__name__}: {e}"
-                except Exception as e2:
-                    s = (
-                        f"{e.__class__.__name__}: "
-                        "error during printing an exception of class"
-                        + e2.__class__.__name__
-                    )
-                logger.info("Request %s failed due to %s.", request_id, s)
+                logger.info(
+                    "Request %s failed due to %s.", request_id, e.__class__.__name__
+                )
             raise EngineGenerateError() from e
         finally:
             if q is not None:
@@ -704,7 +698,7 @@ class AsyncLLM(EngineClient):
                             mm_cache_stats=renderer.stat_mm_cache(),
                         )
             except Exception as e:
-                logger.exception("AsyncLLM output_handler failed.")
+                logger.error("AsyncLLM output_handler failed: %s", type(e).__name__)
                 output_processor.propagate_error(e)
 
         self.output_handler = asyncio.create_task(output_handler())

@@ -367,9 +367,7 @@ def create_error_response(
 
     if isinstance(message, Exception):
         exc = message
-        logger.debug(
-            "create_error_response called with %s: %s", type(exc).__name__, exc
-        )
+        logger.debug("create_error_response called with %s", type(exc).__name__)
 
         from vllm.exceptions import VLLMNotFoundError, VLLMValidationError
 

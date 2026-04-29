@@ -32,11 +32,14 @@ def responses(request: Request) -> OpenAIServingResponses | None:
 
 
 async def _convert_stream_to_sse_events(
-    generator: AsyncGenerator[StreamingResponsesResponse, None],
+    generator: AsyncGenerator[StreamingResponsesResponse | ErrorResponse, None],
 ) -> AsyncGenerator[str, None]:
     """Convert the generator to a stream of events in SSE format"""
     async for event in generator:
-        event_type = getattr(event, "type", "unknown")
+        event_type = getattr(event, "type", None)
+        if event_type is None:
+            # ErrorResponse doesn't have a type field; use "error".
+            event_type = "error"
         # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format
         event_data = (
             f"event: {event_type}\ndata: {event.model_dump_json(indent=None)}\n\n"

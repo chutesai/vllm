@@ -237,15 +237,25 @@ class OpenAIServingRender:
             if error_check_ret is not None:
                 return error_check_ret
 
-            conversation, engine_inputs = await self.preprocess_chat(
-                request,
-                request.messages,
-                default_template=self.chat_template,
-                default_template_content_format=self.chat_template_content_format,
-                default_template_kwargs=self.default_chat_template_kwargs,
-                tool_dicts=tool_dicts,
-                tool_parser=tool_parser,
-            )
+            try:
+                conversation, engine_inputs = await self.preprocess_chat(
+                    request,
+                    request.messages,
+                    default_template=self.chat_template,
+                    default_template_content_format=self.chat_template_content_format,
+                    default_template_kwargs=self.default_chat_template_kwargs,
+                    tool_dicts=tool_dicts,
+                    tool_parser=tool_parser,
+                )
+            except (ValueError, TypeError) as e:
+                logger.error("Error rendering chat request: %s", type(e).__name__)
+                return self.create_error_response(f"Error rendering chat request: {e}")
+            except Exception as e:
+                # Catch Jinja TemplateError and other rendering failures.
+                if any(cls.__name__ == "TemplateError" for cls in type(e).__mro__):
+                    logger.error("Error rendering chat template: %s", type(e).__name__)
+                    return self.create_error_response(e)
+                raise
         else:
             # For GPT-OSS.
             should_include_tools = tool_dicts is not None

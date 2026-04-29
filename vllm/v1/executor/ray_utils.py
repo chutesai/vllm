@@ -84,7 +84,7 @@ try:
                     f"Error executing method {method!r}. "
                     "This might cause deadlock in distributed execution."
                 )
-                logger.exception(msg)
+                logger.error(msg)
                 raise e
 
         def get_node_ip(self) -> str:

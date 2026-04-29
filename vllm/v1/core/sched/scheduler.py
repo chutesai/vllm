@@ -178,6 +178,10 @@ class Scheduler(SchedulerInterface):
         # number of unfinished requests
         self.num_waiting_for_streaming_input: int = 0
 
+        # Requests whose grammar compilation failed during scheduling.
+        # Drained by the engine core after each step to send error outputs.
+        self.grammar_failed_reqs: list[tuple[str, int]] = []
+
         # KV Connector: requests in process of async KV loading or recving
         self.finished_recving_kv_req_ids: set[str] = set()
         self.failed_recving_kv_req_ids: set[str] = set()
@@ -583,6 +587,25 @@ class Scheduler(SchedulerInterface):
                             "%s is still in WAITING_FOR_REMOTE_KVS state.",
                             request_id,
                         )
+                    # Check for grammar compilation failure — abort the
+                    # request instead of letting it sit forever.
+                    so_req = request.structured_output_request
+                    if (
+                        request.status
+                        == RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
+                        and so_req
+                        and so_req.grammar_compilation_error
+                    ):
+                        request_queue.pop_request()
+                        # Collect (req_id, client_index) so the engine
+                        # core can send error outputs to the client.
+                        self.grammar_failed_reqs.append(
+                            (request_id, request.client_index)
+                        )
+                        self.finish_requests(
+                            request_id, RequestStatus.FINISHED_BAD_REQUEST
+                        )
+                        continue
                     request_queue.pop_request()
                     step_skipped_waiting.prepend_request(request)
                     continue
@@ -1920,6 +1943,15 @@ class Scheduler(SchedulerInterface):
 
     def has_finished_requests(self) -> bool:
         return len(self.finished_req_ids) > 0
+
+    def take_grammar_failed_reqs(self) -> list[tuple[str, int]]:
+        """Return and clear the list of requests whose grammar compilation
+        failed during the last scheduling step."""
+        if not self.grammar_failed_reqs:
+            return []
+        failed = self.grammar_failed_reqs
+        self.grammar_failed_reqs = []
+        return failed
 
     def reset_prefix_cache(
         self, reset_running_requests: bool = False, reset_connector: bool = False

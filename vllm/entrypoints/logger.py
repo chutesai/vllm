@@ -53,9 +53,9 @@ class RequestLogger:
             )
 
         logger.info(
-            "Received request %s: params: %s, lora_request: %s.",
+            "Received request %s: param_type: %s, lora_request: %s.",
             request_id,
-            params,
+            type(params).__name__ if params is not None else None,
             lora_request,
         )
 

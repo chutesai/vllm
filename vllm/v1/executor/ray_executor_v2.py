@@ -196,7 +196,7 @@ class RayWorkerProc(WorkerProc):
 
             self.worker_busy_loop()
         except Exception as e:
-            logger.exception("RayWorkerProc failed: %s", e)
+            logger.error("RayWorkerProc failed: %s", type(e).__name__)
             raise
         finally:
             self.shutdown()
@@ -448,9 +448,11 @@ class RayExecutorV2(MultiprocExecutor):
             while not _should_stop() and ray.is_initialized():
                 try:
                     done, _ = ray.wait(run_refs, num_returns=1, timeout=5.0)
-                except Exception:
-                    logger.exception(
-                        "RayWorkerMonitor: unexpected error, exiting monitor thread"
+                except Exception as e:
+                    logger.error(
+                        "RayWorkerMonitor: unexpected error (%s), "
+                        "exiting monitor thread",
+                        type(e).__name__,
                     )
                     return
                 if not done or _should_stop():
@@ -513,7 +515,7 @@ class RayExecutorV2(MultiprocExecutor):
                 ray.kill(handle.actor)
                 logger.debug("Killed actor rank=%d", handle.rank)
             except Exception:
-                logger.exception("Failed to kill actor rank=%d", handle.rank)
+                logger.error("Failed to kill actor rank=%d", handle.rank)
 
         if rpc_broadcast_mq := getattr(self, "rpc_broadcast_mq", None):
             rpc_broadcast_mq.shutdown()

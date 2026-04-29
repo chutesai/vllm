@@ -557,13 +557,18 @@ class OpenAIServing:
         return json_str
 
     def _raise_if_error(self, finish_reason: str | None, request_id: str) -> None:
-        """Raise GenerationError if finish_reason indicates an error."""
+        """Raise GenerationError or ValueError based on finish_reason."""
         if finish_reason == "error":
             logger.error(
                 "Request %s failed with an internal error during generation",
                 request_id,
             )
             raise GenerationError("Internal server error")
+        if finish_reason == "bad_request":
+            raise ValueError(
+                "Request failed due to invalid structured output "
+                "configuration (e.g., unsupported regex features)"
+            )
 
     def _convert_generation_error_to_streaming_response(
         self, e: GenerationError

@@ -134,7 +134,7 @@ class RealtimeConnection:
                 self.audio_queue.put_nowait(audio_array)
 
             except Exception as e:
-                logger.error("Failed to decode audio: %s", e)
+                logger.error("Failed to decode audio: %s", type(e).__name__)
                 await self.send_error("Invalid audio data", "invalid_audio")
 
         elif event_type == "input_audio_buffer.commit":

@@ -426,7 +426,7 @@ def _merge_embeds(
                 [item[key] for item in data_items], pin_memory=False
             )
     except Exception:
-        logger.exception(
+        logger.warning(
             "Error when parsing merged embeddings. "
             "Falling back to auto-detected fields."
         )
@@ -622,7 +622,7 @@ def _resolve_vision_chunk_items(
                         vision_chunks_uuids.append(chunk_uuid)
                     video_idx += 1
                 except Exception as e:
-                    logger.warning("Failed to split video chunks: %s", e)
+                    logger.warning("Failed to split video chunks: %s", type(e).__name__)
                     processed_chunks.append(data)  # type: ignore[arg-type]
                     vision_chunks_uuids.append(uuid)
             else:

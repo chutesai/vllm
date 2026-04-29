@@ -21,6 +21,7 @@ class StructuredOutputRequest:
     _grammar: Future[StructuredOutputGrammar] | StructuredOutputGrammar | None = None
     reasoning_ended: bool | None = None
     reasoning_ended_by_fallback: bool = False
+    grammar_compilation_error: str | None = None
 
     @staticmethod
     def from_sampling_params(
@@ -44,6 +45,16 @@ class StructuredOutputRequest:
                 self.status = RequestStatus.WAITING
             except TimeoutError:
                 return False
+            except Exception:
+                # Grammar compilation failed (e.g. unsupported regex
+                # features, invalid schema). Store the error and mark
+                # completion so the scheduler can abort the request
+                # instead of crashing.
+                self._grammar = None
+                self.grammar_compilation_error = (
+                    "Structured output grammar compilation failed"
+                )
+                return True
         return True
 
     @property

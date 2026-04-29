@@ -38,7 +38,6 @@ from openai.types.responses.response_reasoning_item import (
 )
 from openai.types.responses.tool import Mcp, Tool
 from openai_harmony import Message as OpenAIHarmonyMessage
-from pydantic import TypeAdapter
 
 from vllm import envs
 from vllm.config.utils import replace
@@ -331,7 +330,7 @@ class OpenAIServingResponses(OpenAIServing):
         request: ResponsesRequest,
         raw_request: Request | None = None,
     ) -> (
-        AsyncGenerator[StreamingResponsesResponse, None]
+        AsyncGenerator[StreamingResponsesResponse | ErrorResponse, None]
         | ResponsesResponse
         | ErrorResponse
     ):
@@ -371,12 +370,21 @@ class OpenAIServingResponses(OpenAIServing):
         lora_request = self._maybe_get_adapters(request)
         model_name = self.models.model_name(lora_request)
 
-        if self.use_harmony:
-            messages, engine_inputs = self._make_request_with_harmony(
-                request, prev_response
-            )
-        else:
-            messages, engine_inputs = await self._make_request(request, prev_response)
+        try:
+            if self.use_harmony:
+                messages, engine_inputs = self._make_request_with_harmony(
+                    request, prev_response
+                )
+            else:
+                messages, engine_inputs = await self._make_request(
+                    request, prev_response
+                )
+        except (ValueError, TypeError) as e:
+            return self.create_error_response(e)
+        except Exception as e:
+            if any(cls.__name__ == "TemplateError" for cls in type(e).__mro__):
+                return self.create_error_response(e)
+            raise
 
         request_metadata = RequestResponseMetadata(request_id=request.request_id)
         if raw_request:
@@ -432,6 +440,20 @@ class OpenAIServingResponses(OpenAIServing):
             sampling_params = request.to_sampling_params(
                 default_max_tokens, self.default_sampling_params
             )
+
+            # Eagerly validate sampling params (especially structured
+            # outputs) so errors are returned as 400 Bad Request instead
+            # of surfacing mid-stream or as 500 errors.
+            try:
+                ip = self.input_processor
+                sampling_params.verify(
+                    ip.model_config,
+                    ip.speculative_config,
+                    ip.structured_outputs_config,
+                    ip.tokenizer,
+                )
+            except (ValueError, TypeError) as e:
+                return self.create_error_response(e)
 
             trace_headers = (
                 None
@@ -758,6 +780,12 @@ class OpenAIServingResponses(OpenAIServing):
                     pass
             except asyncio.CancelledError:
                 return self.create_error_response("Client disconnected")
+            except (ValueError, TypeError) as e:
+                return self.create_error_response(e)
+            except Exception as e:
+                if any(cls.__name__ == "TemplateError" for cls in type(e).__mro__):
+                    return self.create_error_response(e)
+                raise
 
         # NOTE: Implementation of status is still WIP, but for now
         # we guarantee that if the status is not "completed", it is accurate.
@@ -1314,7 +1342,7 @@ class OpenAIServingResponses(OpenAIServing):
             try:
                 await task
             except asyncio.CancelledError:
-                logger.exception("Background task for %s was cancelled", response_id)
+                logger.warning("Background task for %s was cancelled", response_id)
         return response
 
     def _make_not_found_error(self, response_id: str) -> ErrorResponse:
@@ -1944,7 +1972,7 @@ class OpenAIServingResponses(OpenAIServing):
         tokenizer: TokenizerLike,
         request_metadata: RequestResponseMetadata,
         created_time: int | None = None,
-    ) -> AsyncGenerator[StreamingResponsesResponse, None]:
+    ) -> AsyncGenerator[StreamingResponsesResponse | ErrorResponse, None]:
         # TODO:
         # 1. Handle disconnect
 
@@ -2010,11 +2038,20 @@ class OpenAIServingResponses(OpenAIServing):
                 ):
                     yield event_data
             except GenerationError as e:
-                error_json = self._convert_generation_error_to_streaming_response(e)
-                yield _increment_sequence_number_and_return(
-                    TypeAdapter(StreamingResponsesResponse).validate_json(error_json)
+                yield self.create_error_response(
+                    str(e),
+                    err_type="InternalServerError",
+                    status_code=e.status_code,
                 )
                 return
+            except (ValueError, TypeError) as e:
+                yield self.create_error_response(e)
+                return
+            except Exception as e:
+                if any(cls.__name__ == "TemplateError" for cls in type(e).__mro__):
+                    yield self.create_error_response(e)
+                    return
+                raise
 
             async def empty_async_generator():
                 # A hack to trick Python to think this is a generator but

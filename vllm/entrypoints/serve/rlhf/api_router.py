@@ -65,9 +65,9 @@ async def pause_generation(
             status_code=HTTPStatus.BAD_REQUEST.value,
         )
     except Exception as err:  # pragma: no cover - defensive
-        logger.exception("Failed to pause generation")
+        logger.error("Failed to pause generation: %s", type(err).__name__)
         return JSONResponse(
-            content={"error": f"Failed to pause generation: {err}"},
+            content={"error": "Failed to pause generation"},
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
         )
 
@@ -85,9 +85,9 @@ async def resume_generation(raw_request: Request) -> JSONResponse:
             status_code=HTTPStatus.OK.value,
         )
     except Exception as err:  # pragma: no cover - defensive
-        logger.exception("Failed to resume generation")
+        logger.error("Failed to resume generation: %s", type(err).__name__)
         return JSONResponse(
-            content={"error": f"Failed to resume generation: {err}"},
+            content={"error": "Failed to resume generation"},
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
         )
 
@@ -101,9 +101,9 @@ async def is_paused(raw_request: Request) -> JSONResponse:
     try:
         paused = await engine.is_paused()
     except Exception as err:  # pragma: no cover - defensive
-        logger.exception("Failed to fetch pause status")
+        logger.error("Failed to fetch pause status: %s", type(err).__name__)
         return JSONResponse(
-            content={"error": f"Failed to fetch pause status: {err}"},
+            content={"error": "Failed to fetch pause status"},
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
         )
 

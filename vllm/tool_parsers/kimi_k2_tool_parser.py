@@ -488,9 +488,7 @@ class KimiK2ToolParser(ToolParser):
                 # (header noise). Don't suppress content between tools to avoid
                 # breaking potential delimiter characters.
                 if self.in_tool_section and cur_tool_start_count == 0:
-                    logger.debug(
-                        "In tool section before first tool, suppressing"
-                    )
+                    logger.debug("In tool section before first tool, suppressing")
                     # Return empty delta to maintain iterator contract
                     return DeltaMessage(content="")
                 logger.debug("Generating text content! skipping tool parsing.")

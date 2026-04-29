@@ -872,11 +872,11 @@ class WorkerProc:
             # TODO(rob): handle case where the MQ itself breaks.
 
             if ready_writer is not None:
-                logger.exception("WorkerProc failed to start.")
+                logger.error("WorkerProc failed to start.")
             elif shutdown_requested.is_set():
                 logger.info("WorkerProc shutting down.")
             else:
-                logger.exception("WorkerProc failed.")
+                logger.error("WorkerProc failed.")
 
             # The parent sends a SIGTERM to all worker processes if
             # any worker dies. Set this value so we don't re-throw
@@ -964,7 +964,7 @@ class WorkerProc:
                 # Notes have been introduced in python 3.11
                 if hasattr(e, "add_note"):
                     e.add_note(traceback.format_exc())
-                logger.exception("WorkerProc hit an exception.")
+                logger.error("WorkerProc hit an exception: %s", type(e).__name__)
                 # exception might not be serializable, so we convert it to
                 # string, only for logging purpose.
                 if output_rank is None or self.rank == output_rank:
