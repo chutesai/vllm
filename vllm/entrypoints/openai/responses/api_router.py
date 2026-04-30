@@ -42,7 +42,8 @@ async def _convert_stream_to_sse_events(
             event_type = "error"
         # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format
         event_data = (
-            f"event: {event_type}\ndata: {event.model_dump_json(indent=None)}\n\n"
+            f"event: {event_type}\ndata: "
+            f"{event.model_dump_json(indent=None, by_alias=True)}\n\n"
         )
         yield event_data
 
@@ -68,10 +69,11 @@ async def create_responses(request: ResponsesRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(
-            content=generator.model_dump(), status_code=generator.error.code
+            content=generator.model_dump(mode="json", by_alias=True),
+            status_code=generator.error.code,
         )
     elif isinstance(generator, ResponsesResponse):
-        return JSONResponse(content=generator.model_dump())
+        return JSONResponse(content=generator.model_dump(mode="json", by_alias=True))
 
     return StreamingResponse(
         content=_convert_stream_to_sse_events(generator), media_type="text/event-stream"
@@ -98,10 +100,11 @@ async def retrieve_responses(
 
     if isinstance(response, ErrorResponse):
         return JSONResponse(
-            content=response.model_dump(), status_code=response.error.code
+            content=response.model_dump(mode="json", by_alias=True),
+            status_code=response.error.code,
         )
     elif isinstance(response, ResponsesResponse):
-        return JSONResponse(content=response.model_dump())
+        return JSONResponse(content=response.model_dump(mode="json", by_alias=True))
     return StreamingResponse(
         content=_convert_stream_to_sse_events(response), media_type="text/event-stream"
     )
@@ -118,9 +121,10 @@ async def cancel_responses(response_id: str, raw_request: Request):
 
     if isinstance(response, ErrorResponse):
         return JSONResponse(
-            content=response.model_dump(), status_code=response.error.code
+            content=response.model_dump(mode="json", by_alias=True),
+            status_code=response.error.code,
         )
-    return JSONResponse(content=response.model_dump())
+    return JSONResponse(content=response.model_dump(mode="json", by_alias=True))
 
 
 def attach_router(app: FastAPI):

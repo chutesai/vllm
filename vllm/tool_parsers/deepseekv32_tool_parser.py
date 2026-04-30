@@ -26,6 +26,7 @@ from vllm.tool_parsers.abstract_tool_parser import (
     Tool,
     ToolParser,
 )
+from vllm.tool_parsers.utils import partial_tag_overlap
 
 logger = init_logger(__name__)
 
@@ -45,17 +46,17 @@ class DeepSeekV32ToolParser(ToolParser):
     </｜DSML｜function_calls>
     """
 
+    tool_call_start_token: str = "<｜DSML｜function_calls>"
+    tool_call_end_token: str = "</｜DSML｜function_calls>"
+
     def __init__(self, tokenizer: TokenizerLike, tools: list[Tool] | None = None):
         super().__init__(tokenizer, tools)
 
         self.prev_tool_call_arr: list[dict] = []
 
-        # Sentinel token
-        self.tool_call_start_token: str = "<｜DSML｜function_calls>"
-
         # Streaming state
-        self.is_tool_call_started: bool = False
         self.current_tool_index: int = 0
+        self._sent_content_idx: int = 0
 
         # Flexible regex patterns for complete parsing and streaming
         # Optional DSML marker: matches both "<function_calls>"
@@ -139,7 +140,7 @@ class DeepSeekV32ToolParser(ToolParser):
         request = super().adjust_request(request)
         if request.tools and request.tool_choice != "none":
             # Ensure tool call tokens
-            # (<｜DSML｜function_calls>, </｜DSML｜function_calls>)
+            # (e.g. <｜DSML｜function_calls>, </｜DSML｜function_calls>)
             # are not skippedduring decoding.
             # Even though they are not marked as special tokens,
             # setting skip_special_tokens=False ensures proper handling in
@@ -253,12 +254,13 @@ class DeepSeekV32ToolParser(ToolParser):
                     tool_call_match
                 ):
                     param_dict = self._parse_invoke_params(invoke_content)
+                    params = self._convert_params_with_schema(invoke_name, param_dict)
                     tool_calls.append(
                         ToolCall(
                             type="function",
                             function=FunctionCall(
                                 name=invoke_name.strip(),
-                                arguments=json.dumps(param_dict, ensure_ascii=False),
+                                arguments=json.dumps(params, ensure_ascii=False),
                             ),
                         )
                     )
@@ -286,7 +288,7 @@ class DeepSeekV32ToolParser(ToolParser):
     def _reset_streaming_state(self):
         """Reset all streaming state."""
         self.current_tool_index = 0
-        self.is_tool_call_started = False
+        self._sent_content_idx = 0
         self.prev_tool_call_arr.clear()
         self.streamed_args_for_tool.clear()
 
@@ -331,6 +333,24 @@ class DeepSeekV32ToolParser(ToolParser):
 
         return delta_tool_calls
 
+    def _extract_content(self, current_text: str) -> str | None:
+        """Return unsent non-tool-call text, or None.
+
+        Holds back any suffix that could be a partial start marker
+        so that split markers are never leaked as content.
+        """
+        if self.tool_call_start_token not in current_text:
+            overlap = partial_tag_overlap(current_text, self.tool_call_start_token)
+            sendable_idx = len(current_text) - overlap
+        else:
+            sendable_idx = current_text.index(self.tool_call_start_token)
+
+        if sendable_idx > self._sent_content_idx:
+            content = current_text[self._sent_content_idx : sendable_idx]
+            self._sent_content_idx = sendable_idx
+            return content
+        return None
+
     def extract_tool_calls_streaming(
         self,
         previous_text: str,
@@ -352,307 +372,10 @@ class DeepSeekV32ToolParser(ToolParser):
         if not previous_text:
             self._reset_streaming_state()
 
-        # If no delta text, return None unless it's an EOS token after tools
-        if not delta_text:
-            # Check if this is an EOS token after all tool calls are complete
-            if delta_token_ids:
-                # Count complete tool calls
-                complete_calls = len(
-                    self.tool_call_complete_regex.findall(current_text)
-                )
+        content = self._extract_content(current_text)
+        delta_tool_calls = self._extract_delta_tool_calls(current_text, request)
 
-                # If we have completed tool calls and populated prev_tool_call_arr
-                if complete_calls > 0 and len(self.prev_tool_call_arr) > 0:
-                    # Check if all tool calls are closed
-                    open_calls = len(
-                        self.tool_call_start_regex.findall(current_text)
-                    ) - len(self.tool_call_end_regex.findall(current_text))
-                    if open_calls == 0:
-                        # Return empty delta for finish_reason processing
-                        return DeltaMessage(content="")
-                elif not self.is_tool_call_started and current_text:
-                    # This is a regular content response that's now complete
-                    return DeltaMessage(content="")
-            return None
-
-        # Check if we need to advance to next tool
-        if self.json_closed and not self.in_function:
-            # Check if this tool call has ended
-            invoke_ends = len(self.invoke_end_regex.findall(current_text))
-            if invoke_ends > self.current_tool_index:
-                # This tool has ended, advance to next
-                self.current_tool_index += 1
-                self.header_sent = False
-                self.param_count = 0
-                self.json_started = False
-                self.json_closed = False
-                self.in_function = False  # Now we can safely set this to False
-                self.accumulated_params = {}
-                # Continue processing next tool
-                return None
-
-        # Handle normal content before tool calls
-        if not self.is_tool_call_started:
-            # Check if tool call is starting - require FULL start tag (with closing >)
-            # to avoid false positives on literal text like "<function_calls>"
-            # in explanations
-            start_match = self.tool_call_start_regex.search(current_text)
-            if start_match:
-                self.is_tool_call_started = True
-                # Return any content before the tool call
-                delta_start_match = self.tool_call_start_regex.search(delta_text)
-                if delta_start_match:
-                    content_before = delta_text[: delta_start_match.start()]
-                    if content_before:
-                        return DeltaMessage(content=content_before)
-                return None
-            else:
-                # Check if we're between tool calls - skip whitespace
-                stripped_current = current_text.rstrip()
-                end_match = self.tool_call_end_regex.search(stripped_current)
-                if (
-                    end_match
-                    and end_match.end() == len(stripped_current)
-                    and delta_text.strip() == ""
-                ):
-                    # We just ended a tool call, skip whitespace
-                    return None
-                # Normal content, no tool call
-                # Check if current_text ends with a partial tool call start tag
-                # to avoid leaking partial tags as content
-                partial_tag = self._get_partial_tool_start(current_text)
-                if partial_tag:
-                    # Don't emit the partial tag as content yet
-                    if len(delta_text) <= len(partial_tag):
-                        # Entire delta is part of partial tag, emit nothing
-                        return None
-                    else:
-                        # Emit content before the partial tag
-                        return DeltaMessage(content=delta_text[: -len(partial_tag)])
-                return DeltaMessage(content=delta_text)
-
-        # Check if we're between tool calls (waiting for next one)
-        invoke_start_matches = list(self.invoke_start_regex.finditer(current_text))
-        if self.current_tool_index >= len(invoke_start_matches):
-            # We're past all tool calls, shouldn't be here
-            return None
-
-        # Find the current tool call portion
-        invoke_start_match = invoke_start_matches[self.current_tool_index]
-        invoke_start_idx = invoke_start_match.start()
-        invoke_start_end = invoke_start_match.end()
-        # Find where this tool call ends (or current position if not ended yet)
-        invoke_end_match = self.invoke_end_regex.search(current_text, invoke_start_end)
-        if invoke_end_match is None:
-            tool_text = current_text[invoke_start_idx:]
-        else:
-            tool_text = current_text[invoke_start_idx : invoke_end_match.end()]
-
-        # Looking for function header
-        if not self.header_sent:
-            function_name_raw = invoke_start_match.group(1)
-            self.current_function_name = function_name_raw.strip()
-            self.current_tool_id = self._generate_tool_call_id()
-            self.header_sent = True
-            self.in_function = True
-
-            # Add to prev_tool_call_arr immediately when we detect a tool call
-            # Each tool call should be recorded regardless of function name
-            # Ensure we don't add the same tool call index multiple times
-            if len(self.prev_tool_call_arr) <= self.current_tool_index:
-                self.prev_tool_call_arr.append(
-                    {
-                        "name": self.current_function_name,
-                        "arguments": "{}",  # Placeholder, will be updated later
-                    }
-                )
-
-            # Send header with function info
-            return DeltaMessage(
-                tool_calls=[
-                    DeltaToolCall(
-                        index=self.current_tool_index,
-                        id=self.current_tool_id,
-                        function=DeltaFunctionCall(
-                            name=self.current_function_name, arguments=""
-                        ),
-                        type="function",
-                    )
-                ]
-            )
-
-        # We've sent header, now handle function body
-        if self.in_function:
-            # Send opening brace if not sent yet
-            if self.in_function and not self.json_started:
-                self.json_started = True
-                return DeltaMessage(
-                    tool_calls=[
-                        DeltaToolCall(
-                            index=self.current_tool_index,
-                            function=DeltaFunctionCall(arguments="{"),
-                        )
-                    ]
-                )
-
-            # Make sure json_started is set if we're processing parameters
-            if not self.json_started:
-                self.json_started = True
-
-            # Check for function end in accumulated text
-            if not self.json_closed and self.invoke_end_regex.search(tool_text):
-                # Count total parameters in the tool text
-                total_param_count = len(self.parameter_start_regex.findall(tool_text))
-
-                # Only close JSON if all parameters have been processed
-                if self.param_count >= total_param_count:
-                    # Close JSON
-                    self.json_closed = True
-
-                    # Extract complete tool call
-                    # Find the invoke content
-                    invoke_start_match = self.invoke_start_regex.search(tool_text)
-                    invoke_end_match = self.invoke_end_regex.search(tool_text)
-                    if invoke_start_match and invoke_end_match:
-                        invoke_content = tool_text[
-                            invoke_start_match.end() : invoke_end_match.start()
-                        ]
-                        # Parse to get the complete arguments
-                        try:
-                            invoke_params = self._parse_invoke_params(invoke_content)
-                            if invoke_params and self.current_tool_index < len(
-                                self.prev_tool_call_arr
-                            ):
-                                # Update existing entry in prev_tool_call_arr
-                                self.prev_tool_call_arr[self.current_tool_index][
-                                    "arguments"
-                                ] = json.dumps(invoke_params, ensure_ascii=False)
-                        except Exception:
-                            pass  # Ignore parsing errors during streaming
-
-                    result = DeltaMessage(
-                        tool_calls=[
-                            DeltaToolCall(
-                                index=self.current_tool_index,
-                                function=DeltaFunctionCall(arguments="}"),
-                            )
-                        ]
-                    )
-
-                    # Reset state for next tool
-                    self.json_closed = True
-                    self.in_function = False
-                    self.accumulated_params = {}
-
-                    logger.debug("[M2_STREAMING] Tool call completed")
-
-                    return result
-                else:
-                    # Don't close JSON yet, continue processing parameters
-                    return None
-
-            # Look for parameters
-            # Find all parameter starts
-            param_start_matches = list(self.parameter_start_regex.finditer(tool_text))
-
-            # Check if we should start a new parameter
-            if (
-                not self.in_param
-                and self.param_count < len(param_start_matches)
-                and len(param_start_matches) > self.param_count
-            ):
-                # Process the next parameter
-                param_start_match = param_start_matches[self.param_count]
-                self.current_param_name = param_start_match.group(1)
-                value_start = param_start_match.end()
-                value_text = tool_text[value_start:]
-                if value_text.startswith("\n"):
-                    value_text = value_text[1:]
-
-                # Find where this parameter ends
-                param_end_match = self.parameter_end_regex.search(value_text)
-                param_end_idx = param_end_match.start() if param_end_match else -1
-                if param_end_idx == -1:
-                    # No closing tag, look for next parameter or function end
-                    next_param_match = self.parameter_start_regex.search(value_text)
-                    func_end_match = self.invoke_end_regex.search(value_text)
-                    next_param_idx = (
-                        next_param_match.start() if next_param_match else -1
-                    )
-                    func_end_idx = func_end_match.start() if func_end_match else -1
-
-                    if next_param_idx != -1 and (
-                        func_end_idx == -1 or next_param_idx < func_end_idx
-                    ):
-                        param_end_idx = next_param_idx
-                    elif func_end_idx != -1:
-                        param_end_idx = func_end_idx
-                    else:
-                        # Neither found, check if tool call is complete
-                        if self.invoke_end_regex.search(tool_text):
-                            # Tool call and parameter is complete
-                            param_end_idx = len(value_text)
-                        else:
-                            # Still streaming, wait for more content
-                            return None
-
-                if param_end_idx != -1:
-                    # Complete parameter found
-                    param_value = value_text[:param_end_idx]
-                    if param_value.endswith("\n"):
-                        param_value = param_value[:-1]
-
-                    # Store raw value for later processing
-                    self.accumulated_params[self.current_param_name] = param_value
-
-                    # Get parameter configuration for type conversion
-                    param_config = {}
-                    if self.streaming_request and self.streaming_request.tools:
-                        for tool in self.streaming_request.tools:
-                            if (
-                                hasattr(tool, "function")
-                                and tool.function.name == self.current_function_name
-                                and hasattr(tool.function, "parameters")
-                            ):
-                                params = tool.function.parameters
-                                if isinstance(params, dict) and "properties" in params:
-                                    param_config = params["properties"]
-                                break
-
-                    # Get parameter type
-                    param_type = "string"
-                    if (
-                        self.current_param_name in param_config
-                        and isinstance(param_config[self.current_param_name], dict)
-                        and "type" in param_config[self.current_param_name]
-                    ):
-                        param_type = param_config[self.current_param_name]["type"]
-
-                    # Convert param value to appropriate type
-                    converted_value = self._convert_param_value(param_value, param_type)
-
-                    # Build JSON fragment based on the converted type
-                    # Use json.dumps to properly serialize the value
-                    serialized_value = json.dumps(converted_value, ensure_ascii=False)
-
-                    if self.param_count == 0:
-                        json_fragment = (
-                            f'"{self.current_param_name}": {serialized_value}'
-                        )
-                    else:
-                        json_fragment = (
-                            f', "{self.current_param_name}": {serialized_value}'
-                        )
-
-                    self.param_count += 1
-
-                    return DeltaMessage(
-                        tool_calls=[
-                            DeltaToolCall(
-                                index=self.current_tool_index,
-                                function=DeltaFunctionCall(arguments=json_fragment),
-                            )
-                        ]
-                    )
+        if delta_tool_calls or content:
+            return DeltaMessage(content=content, tool_calls=delta_tool_calls)
 
         return None
