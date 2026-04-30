@@ -153,8 +153,9 @@ class PoolsideV1ToolParser(ToolParser):
             tool_choice = getattr(request, "tool_choice", None)
             return bool(tools) and tool_choice != "none"
         except Exception as e:
-            logger.error("Failed to determine if tools are enabled: %s",
-                         type(e).__name__)
+            logger.error(
+                "Failed to determine if tools are enabled: %s", type(e).__name__
+            )
             return False
 
     def adjust_request(
@@ -182,9 +183,7 @@ class PoolsideV1ToolParser(ToolParser):
             for match in matched_tool_calls:
                 tc_detail = self.func_detail_regex.search(match)
                 if not tc_detail:
-                    logger.warning(
-                        "Failed to parse tool call details"
-                    )
+                    logger.warning("Failed to parse tool call details")
                     continue
                 tc_name = tc_detail.group(1).strip()
                 tc_args = tc_detail.group(2)
@@ -207,8 +206,7 @@ class PoolsideV1ToolParser(ToolParser):
                     )
                 )
         except Exception as e:
-            logger.error("Failed to extract tool call spec: %s",
-                         type(e).__name__)
+            logger.error("Failed to extract tool call spec: %s", type(e).__name__)
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )

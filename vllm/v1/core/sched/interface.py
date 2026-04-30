@@ -240,5 +240,9 @@ class SchedulerInterface(ABC):
         """Shutdown the scheduler."""
         raise NotImplementedError
 
+    def take_grammar_failed_reqs(self) -> list:
+        """Return and clear requests that failed grammar compilation."""
+        return []
+
     def get_kv_connector(self) -> "KVConnectorBase_V1 | None":
         return None

@@ -254,6 +254,8 @@ class DeepSeekV32ToolParser(ToolParser):
                     tool_call_match
                 ):
                     param_dict = self._parse_invoke_params(invoke_content)
+                    if param_dict is None:
+                        continue
                     params = self._convert_params_with_schema(invoke_name, param_dict)
                     tool_calls.append(
                         ToolCall(
@@ -308,6 +310,9 @@ class DeepSeekV32ToolParser(ToolParser):
         while len(complete_invokes) > self.current_tool_index:
             invoke_name, invoke_body = complete_invokes[self.current_tool_index]
             param_dict = self._parse_invoke_params(invoke_body)
+            if param_dict is None:
+                self.current_tool_index += 1
+                continue
 
             converted = self._convert_params_with_schema(invoke_name, param_dict)
             args_json = json.dumps(converted, ensure_ascii=False)
@@ -377,5 +382,10 @@ class DeepSeekV32ToolParser(ToolParser):
 
         if delta_tool_calls or content:
             return DeltaMessage(content=content, tool_calls=delta_tool_calls)
+
+        # Empty delta with token ids means EOS or closing tag; return
+        # non-None so the serving framework can finalize finish_reason.
+        if not delta_text and delta_token_ids and self.prev_tool_call_arr:
+            return DeltaMessage(content="")
 
         return None

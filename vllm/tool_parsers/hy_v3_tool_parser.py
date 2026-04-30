@@ -355,8 +355,9 @@ class HYV3ToolParser(ToolParser):
                 )
             return tool_calls
         except Exception as e:
-            logger.error("Error in extracting tool call from response: %s",
-                         type(e).__name__)
+            logger.error(
+                "Error in extracting tool call from response: %s", type(e).__name__
+            )
             return []
 
     def extract_tool_calls(
@@ -383,8 +384,8 @@ class HYV3ToolParser(ToolParser):
 
             except Exception as e:
                 logger.error(
-                    "Error in extracting tool call from response: %s",
-                    type(e).__name__)
+                    "Error in extracting tool call from response: %s", type(e).__name__
+                )
                 return ExtractedToolCallInformation(
                     tools_called=False, tool_calls=[], content=model_output
                 )
