@@ -1,0 +1,589 @@
+{
+  "base": "5f30fc7031cae49bf51073fc953d419b08f8887c",
+  "files": [
+    {
+      "path": "parallax_inference/__init__.py",
+      "sha256": "fdb8b71f6d1b9621cd12b6eb8163a0f16884140458068a6c69d90b3e8ddf27af"
+    },
+    {
+      "path": "parallax_inference/analyze.py",
+      "sha256": "051c4e17baf299f3b8ac6a1ec5f64163033ca65b8bfc2915b7b7407dfb1c022e"
+    },
+    {
+      "path": "parallax_inference/batched_sparse.py",
+      "sha256": "ff33494d412ad433108c7835aadcc6bba8aa104c427863b816acfdd567d4f98f"
+    },
+    {
+      "path": "parallax_inference/bf16_decode.py",
+      "sha256": "33a468d4804f2c3dcc091734100c94b744a4e1fec7389249d3087582d197361e"
+    },
+    {
+      "path": "parallax_inference/block_attn_res.py",
+      "sha256": "4948a5090fd67597414c3065b250ec17906625e694f6f5dde79c1ededdd4500c"
+    },
+    {
+      "path": "parallax_inference/checkpoint.py",
+      "sha256": "a4c8783245ae6ed99a02c2f163b665982b48b552632427e5a72d5c83d20ffe11"
+    },
+    {
+      "path": "parallax_inference/compact_cache.py",
+      "sha256": "83018810e4559003b21b0988aebfa6d577914c1e34d2f2b7b85f6f003f3067cf"
+    },
+    {
+      "path": "parallax_inference/component_timing.py",
+      "sha256": "2f7206ad4d535949baff3bf38da2e193732e440a9f6786e660626b4f630911cc"
+    },
+    {
+      "path": "parallax_inference/config.py",
+      "sha256": "fd1cffc1f9d1b4d4f8fa7bebded5f3065647104e00a8a374d9c41c51add939a4"
+    },
+    {
+      "path": "parallax_inference/conv.py",
+      "sha256": "b314a5a572d53a7081e7501f1a49f4540fd438eec6bf8a77d3818e9cc3ea7f35"
+    },
+    {
+      "path": "parallax_inference/convert_checkpoint.py",
+      "sha256": "1af00df568237ff536ac8b8f7d7db072d494998f7c4aa18dc605d4e7d1ad3150"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_format.cuh",
+      "sha256": "1367b87aba236930ee1bac63280584943b15c792c88182eb2842fdc9aa58c363"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_format_fast.cuh",
+      "sha256": "c679f5a9b9dc548cf7c2ddc2cb9056c298d0a65d3c2b62e659c2b1bf3673e6fb"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_multi.cu",
+      "sha256": "343e4fb0cd5af5c2b66813de9966249f130d6a6a629ae5b4ed61ad321def3d45"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_multi_v3.cu",
+      "sha256": "d322258f293a085c3a3d7b7d6beecd3f95e3f0eac7e5a4201ce1049cf4bd935b"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_multi_v4.cu",
+      "sha256": "bb8f4c630f594bf9d6248e93eca82c2f736b661643561cd515aead8924dc867d"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_multi_v5.cu",
+      "sha256": "9d526c962872441ecac206eb3aebd7412d4969f5b0371efe09379344e434ad16"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_multi_v6.cu",
+      "sha256": "9b1cf47ac9e008d77a77b4efeb194a917738eec733f6256d94d6a10e47685926"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_residual.cu",
+      "sha256": "4350a5f4e02350e3d5c6c7915b504a59dd7d8e28fc9783442efbc89f2d6d8318"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v10.cu",
+      "sha256": "496c821ffe435329853ec42984659ab65d1bb3595f312b7111584a33fc2169a4"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v11.cu",
+      "sha256": "d3ae606e88dc617d9938278a14a1470aa479a852918aee678a5c0a9caa2fb935"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v12.cu",
+      "sha256": "c4569c992bbc030e3aab34445952fa3e1b23bd9505869906c98caa60e6948dab"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v13.cu",
+      "sha256": "16d26a6328d6fffef62b40e1e0ddd17ceeccbcb77c2d46f96a89d935eda8f96a"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v14.cu",
+      "sha256": "6dd88d0b711d0ac1fb845b44a37d7ae52ba3aab7d7fd9291f15a317d9fe7d038"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v15.cu",
+      "sha256": "99660eb4f8cfb5f3e99a54ef8e8446ed8181914ece573239f06aec6e60b8fb0c"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v16.cu",
+      "sha256": "f83fad8345921852c4f3d57c53e24741cd6c4acb2e2f82a806bb09a0166987f4"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v17.cu",
+      "sha256": "c2cfd36d585f79fe38f40da092d52cc82ab940ff3a662f23ffdb9a60baeb2782"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v18.cu",
+      "sha256": "75f348cd31b5c22f08025f655070ad28b71828667006e9a82dd8173e29209a74"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v19.cu",
+      "sha256": "e9bd34aae76f4ff25dac78f085e9c4e4929a1166bacba16b7dbf3053e6100496"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v20.cu",
+      "sha256": "2f94cb49046bc7f01c788a653019d945e71a6966ea6f129148f14c4e89723256"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v21.cu",
+      "sha256": "33168c01e4281f6f6864e66f55181226048b1791ea993d11bd981d5853601aa1"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v22.cu",
+      "sha256": "0d7b987a6bfaecaef74f7a57221b4531f27270be593536a13df9d4c31298fc8a"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v23.cu",
+      "sha256": "bba5f2a27b842b9f6925056b1ce182ba93533136381375de43ff4b2e6b39b572"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v24.cu",
+      "sha256": "085883f8af6bc35e45fbc8afc7a9d9d1f61ad65d5ab0b1197d11a5396faa2348"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v25.cu",
+      "sha256": "fa47b0f9c16fd9630eada8d7c23d0a0de4bf0c07f9bda0ff3b4729bd3cbd8c95"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v26.cu",
+      "sha256": "df7e0bb30ac5f5981a60eebd294a85d85995cc2f75116073cae06bee3e4d35b9"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v27.cu",
+      "sha256": "6cfc0801b2413b86bed4b02816549fe16d485b1e5fdc189b820763aa8f2b3ee8"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v28.cu",
+      "sha256": "371c1c4e9f1f5246a1f2a437f02b3bc8279ba82898cfb98bde9a8c4c06936eb2"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v7.cu",
+      "sha256": "fcd8849e562e8e1a7dc4a3e3194ecb16924c6d7a404457ece563b879558302f8"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v8.cu",
+      "sha256": "8d9547327afbb5fc32cb4f382ffeb51045e6bf916775a5e388fedd690fa43f9e"
+    },
+    {
+      "path": "parallax_inference/csrc/fp4_single_v9.cu",
+      "sha256": "b43249e1c5e6db85611f79ad3b3b8829ed10886e56f5be586962d1421a1414bd"
+    },
+    {
+      "path": "parallax_inference/csrc/grouped_fp4.cu",
+      "sha256": "a9761efc68567d090dfc722327d6720b1245f7fdf3e5d0f372a02a5db32202df"
+    },
+    {
+      "path": "parallax_inference/csrc/sparse_fp4_expert.cu",
+      "sha256": "27adcdef78b50e28ac47728ffd4c8b5863f011917f583a6f7534053ec568c9a2"
+    },
+    {
+      "path": "parallax_inference/decode_slot_cache.py",
+      "sha256": "dfd4c59777b3888d178024935e0f9674e614b479dd3a9d9ff7a77df7ef0c6c4e"
+    },
+    {
+      "path": "parallax_inference/dense_bf16_residual_attention.py",
+      "sha256": "d6320d4757df8bfdd9ad5f785e879a4a19be2793b00c1fcc4469820f66d14e90"
+    },
+    {
+      "path": "parallax_inference/dense_fp16_attention.py",
+      "sha256": "1eb2ca72d437158d3babc06decb18b0ffbbc2df3e9b4e9c14c02b7d4c94459af"
+    },
+    {
+      "path": "parallax_inference/dense_fp16_operands.py",
+      "sha256": "061dd12f2e32f19d8a3c5c0e894be791ef7887143c608798d3ac34dce02badb9"
+    },
+    {
+      "path": "parallax_inference/dense_fp32_attention.py",
+      "sha256": "93937075432529c15cf8c19aa2676521f6a6df840a363de0f4962067d1f5059f"
+    },
+    {
+      "path": "parallax_inference/dense_shared_bf16.py",
+      "sha256": "ca54ff35bcb2c76a240f5df06c3240a915a5fb3f270f9226183d8ffe557eca41"
+    },
+    {
+      "path": "parallax_inference/direct_selected_attention.py",
+      "sha256": "794d6958d76f7f7f461c8ebb16f11eb165c762a6e08c0b7142af14205f800aed"
+    },
+    {
+      "path": "parallax_inference/export_codec.py",
+      "sha256": "a61b414116b92c1deeb101dddc1d9ec758385f7fa310ac24e1741ac2b0241176"
+    },
+    {
+      "path": "parallax_inference/flashinfer_softmax_sampler.py",
+      "sha256": "f64b1f9f2bdca150d20699ef8823873c10112cb8e665976c5a453104f2d06617"
+    },
+    {
+      "path": "parallax_inference/fp4_multi.py",
+      "sha256": "80c10818991604592c8713f584438b48d60c71c23c425959596b8086d006b685"
+    },
+    {
+      "path": "parallax_inference/fp4_multi_v3.py",
+      "sha256": "71ca8d170c80d2be0d5857ab9ac87ce871df8b55ae0656fd0f1717b06a64d77a"
+    },
+    {
+      "path": "parallax_inference/fp4_multi_v4.py",
+      "sha256": "97ecfc6d4bd08a9762150ee8a76e83b998dd0d19cddccc2574f4dab49514269c"
+    },
+    {
+      "path": "parallax_inference/fp4_multi_v5.py",
+      "sha256": "97f378d4312208bd3a3ba7c12c142886b324cb519c76c53678b06830d5b6d364"
+    },
+    {
+      "path": "parallax_inference/fp4_multi_v6.py",
+      "sha256": "9cd8e8b80e682a11508331f1fe49da0ca6cbe3eaefbe3a9ad6d121879d1d3a45"
+    },
+    {
+      "path": "parallax_inference/fp4_residual.py",
+      "sha256": "bf0ee03f35248ed70ac89a0d415f2adc605bf58b7d8da8684b2c87ae0a93b242"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v10.py",
+      "sha256": "94e4fe147184f44f5f8ed3b9ee4ea9ecf2c7bf2b026e748784598d10bff2a6a5"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v11.py",
+      "sha256": "7772645a0fd21299f85cf7ce16f1ceb496c6985fe88897b886f4024690b92465"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v12.py",
+      "sha256": "483d78b83919dd9dfb73756bc59f1b1b8fd8650d7a289f3c3d478247e6d5c23e"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v13.py",
+      "sha256": "6bb7a437ed203fc0024b5b8218dcafd25506826e7befe88f1fb69b7be3bfdca8"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v14.py",
+      "sha256": "507f893a3a4fe7647712c2e60a59d824ba940e415a8edeafcd2b3ac7dd25afef"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v15.py",
+      "sha256": "c38bfbc7e0d7b5155fd5fe9e13c13ce3a5a0a8d10d5e4e63e6a768a41e15f37c"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v16.py",
+      "sha256": "293db72a9f0a105c7f3d774ce0d60da1de6fc9a9096c54a527c7b66b7a5e4205"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v17.py",
+      "sha256": "5cfa23ba5dfb0e5d812b5ad7deeaf89fc0625be9d9d9fc8f221ebe132358bfc2"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v18.py",
+      "sha256": "18d4cc2b263fa54458435616bfd1cf6506a0591040a55b8788495461da88bf19"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v19.py",
+      "sha256": "fbd544a44d1c671d950a4bb0d833e6583747101b2e73c9a17724e5128d0bde2e"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v20.py",
+      "sha256": "05885c0245376f80283c8b952a1d86c34d8affc8e1f59a90ed75ddca06824701"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v21.py",
+      "sha256": "967ba16600771e8963eefbc5c823849868f5b533598044f61de71f9d43c145e3"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v22.py",
+      "sha256": "16d40d7f1972c27b6e3dfb7a00b666df60e7b1e4aef3dc9f4053e68524f5bba1"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v23.py",
+      "sha256": "3fa42018e2d991d76e3dd0a154aaa20d038db02007132be0630cd76f901dd246"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v24.py",
+      "sha256": "505eb521984c77ac163a3b4498c65b0550e0a804cdd87daab31698a487a3923c"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v25.py",
+      "sha256": "20a4fabd1db062691fb33cf3bc4bcf53896e3a0ebef707635c8ebf3722fbf9f0"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v26.py",
+      "sha256": "1a13726887b68a225586060f8d62db7b879fcae351cb64a92d868be34a1358c6"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v27.py",
+      "sha256": "8daae1497f5698fa88bbbb35bc4c9e070c7c9bd5a57f9a52e3c3f6f9a1c9107a"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v28.py",
+      "sha256": "09a138fdf3487adcc6d4e0ac5ace1ae128e92e443b6bf97920d2ef1e1861fdd1"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v7.py",
+      "sha256": "b05d5e7a3a6d600d082da833bf4a63970e3696f9163d2693e2002a614c6c0eda"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v8.py",
+      "sha256": "ff02de1db75f476fe755edccf2166c654a0e082e349132f89562579f92a3a1a4"
+    },
+    {
+      "path": "parallax_inference/fp4_single_v9.py",
+      "sha256": "d7c626f30497a4097bdd2d50b8936897734d33fe8f29f4c031ae8f1b77fb921a"
+    },
+    {
+      "path": "parallax_inference/fp8_linear.py",
+      "sha256": "1e853bf5f2ff6f157b279b28b98059e3483484f6ffcd36ab061c1f113ba6c831"
+    },
+    {
+      "path": "parallax_inference/fp8_matmul.py",
+      "sha256": "8c5a44442a9150a52b98fdc811e2f1eeb0eb81ffee92e9cf4651ce7466861d1b"
+    },
+    {
+      "path": "parallax_inference/fused_pointwise.py",
+      "sha256": "a9972e2fc25660844c3582dc2246efdf7b611969299730ac8352a36a72695e66"
+    },
+    {
+      "path": "parallax_inference/fused_sparse_bf16.py",
+      "sha256": "2819f9dc43ed325b63f19e99d724f6107aec06676276813895505d30930fedd7"
+    },
+    {
+      "path": "parallax_inference/gdn2.py",
+      "sha256": "e428f4a113e34f7f6583b962104ebd83e59b7a52e5dd54a231bf60229eab6cb2"
+    },
+    {
+      "path": "parallax_inference/gdn2_chunk.py",
+      "sha256": "0db1778921f879a08c1378ed639191274d29836c94276233f36c4bcf1126bf64"
+    },
+    {
+      "path": "parallax_inference/gdn2_grid_order.py",
+      "sha256": "68b01a89153c87134be62f5564bea59847f571f62e1d3d607fbdaaa5a234024b"
+    },
+    {
+      "path": "parallax_inference/gdn2_prefill.py",
+      "sha256": "2b75c0ac712e85e2c736b11f01ab81ebc44509077505a6a3cdbf316b31c4706c"
+    },
+    {
+      "path": "parallax_inference/gdn2_prefill_state16.py",
+      "sha256": "844a24661d1388607080050f4eeb5e3474969263574263f36eeaec0b36b82f05"
+    },
+    {
+      "path": "parallax_inference/gdn2_scan_pipeline.py",
+      "sha256": "366c48756fee73f7d47b8655b1fc07e31c65af7ba6fdda005475e8cd49236e82"
+    },
+    {
+      "path": "parallax_inference/gdn2_state16.py",
+      "sha256": "0bae9b23e3fb15fb78f00bf3e7c20f2c7cca65a9d4a3ccd1d37bb56324f27fd3"
+    },
+    {
+      "path": "parallax_inference/grouped_fp4.py",
+      "sha256": "023c071e7f77e079be6098150d6501e4cd5faa5df2f413554f38e81e9b149a2e"
+    },
+    {
+      "path": "parallax_inference/grouped_scalar_attention.py",
+      "sha256": "891e72d07be4c470f4b355b48e0e26ef3220817ce2543b02304abdd72730de96"
+    },
+    {
+      "path": "parallax_inference/grouped_scalar_heads.py",
+      "sha256": "a370af9fb1c4b23be6eea725ced8afb704b58dd3a07eb0c5cdf45f84462b449c"
+    },
+    {
+      "path": "parallax_inference/grouped_ternary.py",
+      "sha256": "a0d9c8b0bfe227b6cbdbf082cdfe845b02aa8c0f129aa5cab8f1aad9863d8641"
+    },
+    {
+      "path": "parallax_inference/hot_keys.py",
+      "sha256": "0f088bc8722e2a33f25455def3121565fc85a0e1dca1f92c7e259701813e0865"
+    },
+    {
+      "path": "parallax_inference/inplace_sampler.py",
+      "sha256": "db1db14e7684e1ea82ab48f0149fb82b335709ee33a6c201d01717bbee84170a"
+    },
+    {
+      "path": "parallax_inference/key_latent_attention.py",
+      "sha256": "040f92182ed0a3396fcc9839d016b0ac8b5b94d772e5ebe20cdc202cbb1dd8c2"
+    },
+    {
+      "path": "parallax_inference/latent_cached_attention.py",
+      "sha256": "a0200de10c6cddd333a23faa2b1304cb4cc1a366e76099efb05e8be5e733963c"
+    },
+    {
+      "path": "parallax_inference/latent_decode.py",
+      "sha256": "4a3b0280a13df60750bca09d1562aa75c0837d7cc0d219735043b30def40cd45"
+    },
+    {
+      "path": "parallax_inference/model.py",
+      "sha256": "55a67b9032b44fc979f146a43408e5b214a1a022a539529126160081d9b70064"
+    },
+    {
+      "path": "parallax_inference/model_config.json",
+      "sha256": "f4070006a07b34a4e4b0e8250a0d09059f89f52841026ba212a4b66073a3d3af"
+    },
+    {
+      "path": "parallax_inference/msa_late_v.py",
+      "sha256": "1df32e1a8ba94f8e4268261970457d96134fc6d5bf3834d85dcbbce83851027d"
+    },
+    {
+      "path": "parallax_inference/msa_selection_finalize.py",
+      "sha256": "8f4cc25994cbe18e5c1ef480b1e90f73a7c5a73c94b04d038058d261fc5ea5fb"
+    },
+    {
+      "path": "parallax_inference/native_grouped_bf16.py",
+      "sha256": "b2fa3e6b72ea8ddae26893f145d0faf46abc3a867164e92a1ce0582beef854d3"
+    },
+    {
+      "path": "parallax_inference/packed_bf16.py",
+      "sha256": "83874856f048d7aa9315e808faca24fb2f6b8793285fee9f47bf13647604e260"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_bf16.py",
+      "sha256": "464b3494566c6014934b51384c7efea348659ea810f880cb1d596257af070186"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_fullcol.py",
+      "sha256": "0365d135612dc5263bee9e3d2382abaec33d8af77c708a6126479dfcac848ba9"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_fullrow.py",
+      "sha256": "edb76b7b05aa6aa35032184228defb39f006af60631bf93b44de8a6f8943dafb"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_fusedgather.py",
+      "sha256": "17385f66022173f66dbc362bef21b9a68f200360ba1f750f4eb3a243dd56631d"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_halfpartial.py",
+      "sha256": "314a553668abfd0f81773ea7164c8aa1032cd258f461b90e0dc13c7f93f27877"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_producer.py",
+      "sha256": "409563db4749151de6ca198fd4670d57bd0c2562fbc8d628280481f3f456343f"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_split.py",
+      "sha256": "87317a3af277094a61a384c435ce57781ecb2cfd3a4cea8fe4854bb59fea55d9"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_tma.py",
+      "sha256": "7b8ce0c3c991456ad8c1c841d8b333dbb2826e65839ab8c40ff39a0fb44895a2"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_tma_double.py",
+      "sha256": "31e9a40239cd246895c17e31ba9669d2fa681b1f9ae492a5ca0f87722961ff92"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_tma_explicit.py",
+      "sha256": "917ef5e2702f4b6c70c9ac99ef9c21538dcd6edea865b5272fab7d9267615a80"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_tma_forced.py",
+      "sha256": "4bc2eea6e4ca2a75a65f4a8f8719e921f0018074a0c496e949388572943dab21"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_tma_serial.py",
+      "sha256": "2d273e3b9cde1a1fdf9f66669be9e5f2df85d652a81e49ce09a3011e34ff60c5"
+    },
+    {
+      "path": "parallax_inference/packed_sparse_tma_warp.py",
+      "sha256": "4943a6e97e3f68c6261a37265893337448c391e2a5153a16d9274bcc8dab3e09"
+    },
+    {
+      "path": "parallax_inference/paged_msa.py",
+      "sha256": "84dfdcf8b84c3d9ed02dce51de81b02c4475490e4d86d000b4a4c1819452d0c2"
+    },
+    {
+      "path": "parallax_inference/paged_msa_chunked_scores.py",
+      "sha256": "7198f5c471b8295955aa13dd516fbae3bd7291aa0a929b429d9e006cb5dd1a06"
+    },
+    {
+      "path": "parallax_inference/pair_lut_bf16.py",
+      "sha256": "7d3340480c42807cf3bb7ebe291efd64154428d4a6c4d1b3b9e1ebad1974b74b"
+    },
+    {
+      "path": "parallax_inference/paired_gdn_outputs.py",
+      "sha256": "5d16f5e20ed909e263ef0f4f30a61400bb8630e694d29fcd0f07f9ba417ba0aa"
+    },
+    {
+      "path": "parallax_inference/paired_linear.py",
+      "sha256": "196107bbd7286a312e08d3c8141ff74f561e60b87b37038e38f274926001b0a9"
+    },
+    {
+      "path": "parallax_inference/profile.py",
+      "sha256": "6754a0e11b5b01e1a1fd4980dd906511903e4866bc8b5689441663967fd04a95"
+    },
+    {
+      "path": "parallax_inference/profiles/kappa-sm120.json",
+      "sha256": "5225f6b1ed18de516107207cc6b649c7c0301bc290d2c5c4e72a47772f0253fa"
+    },
+    {
+      "path": "parallax_inference/pyproject.toml",
+      "sha256": "62cbad6bfd08bc3b98bc3d3aa7e5ced5041ae08df57c21022b92ce9ae8d783e9"
+    },
+    {
+      "path": "parallax_inference/reconstructed_cache.py",
+      "sha256": "4c25ff0494245e7585babbec36bb4be2d23228e733e5020f603a4605b10fe958"
+    },
+    {
+      "path": "parallax_inference/reference.py",
+      "sha256": "e102a39346c150f4d7b547dba85a971f245fe71e7d37a60e0cd1229e4c434fc9"
+    },
+    {
+      "path": "parallax_inference/residual.py",
+      "sha256": "16eed7169e32fa4fe4bfa801411bb45f7dda553d8447ba7a689915f9fb34ac91"
+    },
+    {
+      "path": "parallax_inference/rolling_gdn2.py",
+      "sha256": "ad1ba6efc6b36ef2233bb6664a819280d94e3ec3cb41150415d634a803d93714"
+    },
+    {
+      "path": "parallax_inference/router_projection.py",
+      "sha256": "6492b58e28e3dac640e2a82ebb59f0a4ba6102f01b8bf4754f8f153dedcf7cf6"
+    },
+    {
+      "path": "parallax_inference/routing_probe.py",
+      "sha256": "755a5576bc4b88cf25f177d3853c3cb5b58e72978ef43920e24ece7c1c7dd681"
+    },
+    {
+      "path": "parallax_inference/runtime_norm.py",
+      "sha256": "2bc65667c625eaa2e3a98c106dd9dd6f478a1bfaa80a0a5982df7cf0e2fe58e4"
+    },
+    {
+      "path": "parallax_inference/selected_attention.py",
+      "sha256": "83eaea82dafee3600ecc9a43ca2bfb80cfd02cb785865ad1562c07acb080d8bb"
+    },
+    {
+      "path": "parallax_inference/shared_pointwise.py",
+      "sha256": "0c480b108c4d26d83cfa0f66b02b6ff5c968f7b1c03e72fcfefb82b3a62dce47"
+    },
+    {
+      "path": "parallax_inference/sparse_fp4.py",
+      "sha256": "ee4810e6554055bba90cf73a8646b21fc99a8d9a6b398b678b44f6e8a38b06e2"
+    },
+    {
+      "path": "parallax_inference/sparse_moe.py",
+      "sha256": "83328fac0427ed5c1b30e85682704390faab1dc7bfc2a33684ed7ff73a431750"
+    },
+    {
+      "path": "parallax_inference/split_selected_attention.py",
+      "sha256": "f3f4987ba95b788d1811195eee7cda56f3814896c97618737d559a43b5bd2e28"
+    },
+    {
+      "path": "parallax_inference/ternary_decode.py",
+      "sha256": "10164f2a5342e0ee68d28819377cb12468a56c512df3d733cfc006afce13739e"
+    },
+    {
+      "path": "parallax_inference/triton_block_attn_res.py",
+      "sha256": "61de3e5ef8bd28f4898c637d381e8c3dd80f73325fa1963f18628b1500eb9467"
+    },
+    {
+      "path": "parallax_inference/vllm_ops.py",
+      "sha256": "d8692ce42ef9d308ca2dffa2a3e0c8145e6dbfca28ab498db8f5efafe32cd5a3"
+    },
+    {
+      "path": "benchmarks/kernels/parallax/bench_serving_fp4.py",
+      "sha256": "0d2cf5ebdbdcb3240b431e34da29790dafb904e2c36d751212cf12f6d5908256"
+    },
+    {
+      "path": "benchmarks/kernels/parallax/verification_inputs.json",
+      "sha256": "d7de6ec550a3136b92fc06ea40d430d3b4b81580ecdb9a811b122964b26bdd22"
+    },
+    {
+      "path": "benchmarks/kernels/parallax/verify_inference.py",
+      "sha256": "5c16e82771d235dfb6129f2c9e73a177bd76b2ab73bfce7b8c6de0e27533794b"
+    },
+    {
+      "path": "tests/kernels/parallax/test_kappa_release.py",
+      "sha256": "c210e26690bf63c7e1a9596a4de6ceec6b309d3e8b0621bfee6069b24e1125a2"
+    }
+  ]
+}

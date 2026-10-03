@@ -1,0 +1,143 @@
+{
+  "upstream_base": "5f30fc7031cae49bf51073fc953d419b08f8887c",
+  "checkpoint_revision": "15975e88320522284396bfe15c02e533d8b49dc4",
+  "runtime": {
+    "upstream_commit": "5f30fc7031cae49bf51073fc953d419b08f8887c",
+    "vllm_version": "0.30.1rc1.dev619+g5f30fc703",
+    "vllm_source_path": "/workspace/parallax-kappa/upstream-port-5f30/vllm/__init__.py",
+    "native_extension_path": "/workspace/parallax-kappa/upstream-port-5f30/vllm/_C_stable_libtorch.abi3.so",
+    "native_extension_sha256": "2c7acf128ec9591a5c071b24eb0f386d4054e903f8b2fd885739821cfd58b6a7",
+    "native_wheel_metadata": [
+      {
+        "package_name": "vllm",
+        "version": "0.30.1rc1.dev619+g5f30fc703",
+        "build_tag": null,
+        "python_tag": "cp38",
+        "abi_tag": "abi3",
+        "platform_tag": "manylinux_2_28_aarch64",
+        "variant": null,
+        "filename": "vllm-0.30.1rc1.dev619+g5f30fc703-cp38-abi3-manylinux_2_28_aarch64.whl",
+        "path": "../../../5f30fc7031cae49bf51073fc953d419b08f8887c/vllm-0.30.1rc1.dev619%2Bg5f30fc703-cp38-abi3-manylinux_2_28_aarch64.whl"
+      },
+      {
+        "package_name": "vllm",
+        "version": "0.30.1rc1.dev619+g5f30fc703",
+        "build_tag": null,
+        "python_tag": "cp38",
+        "abi_tag": "abi3",
+        "platform_tag": "manylinux_2_28_x86_64",
+        "variant": null,
+        "filename": "vllm-0.30.1rc1.dev619+g5f30fc703-cp38-abi3-manylinux_2_28_x86_64.whl",
+        "path": "../../../5f30fc7031cae49bf51073fc953d419b08f8887c/vllm-0.30.1rc1.dev619%2Bg5f30fc703-cp38-abi3-manylinux_2_28_x86_64.whl"
+      }
+    ],
+    "plugin_path": "/workspace/parallax-kappa/upstream-port-5f30/parallax_inference/__init__.py",
+    "torch": "2.13.0+cu132",
+    "triton": "3.7.1",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "torch_cuda": "13.2",
+    "cpu_tests_passed": 12,
+    "test_command": ".venv/bin/python -m pytest --confcutdir=tests/kernels/parallax tests/kernels/parallax/test_kappa_release.py -q"
+  },
+  "standard_scheduler_parity": {
+    "scope": "Fresh upstream 5f30 port, unchanged profile, 256 sequences x 128 prompt + 128 generated; greedy numerical screen, not throughput or broad quality evaluation",
+    "tokens_identical": true,
+    "logprobs_exact": true,
+    "max_abs_logprob_delta": 0.0,
+    "mesh_imports_blocked": true,
+    "token_sha256": "f556495914cf33391bfeb03effe9d90de01070d0060707887957530acefc2aaa",
+    "package_path": "/workspace/parallax-kappa/upstream-port-5f30/parallax_inference/__init__.py",
+    "vllm_version": "0.30.1rc1.dev619+g5f30fc703",
+    "vllm_path": "/workspace/parallax-kappa/upstream-port-5f30/vllm/__init__.py"
+  },
+  "optimized_scheduler_parity": {
+    "scope": "256 sequences x 128 prompt + 128 generated; matched greedy numerical screen, not a quality evaluation",
+    "tokens_identical": true,
+    "logprobs_exact": true,
+    "max_abs_logprob_delta": 0.0,
+    "optimized": true,
+    "shadow": true,
+    "token_sha256": "f556495914cf33391bfeb03effe9d90de01070d0060707887957530acefc2aaa",
+    "package_path": "/workspace/parallax-kappa/upstream-port-5f30/parallax_inference/__init__.py",
+    "vllm_version": "0.30.1rc1.dev619+g5f30fc703",
+    "vllm_path": "/workspace/parallax-kappa/upstream-port-5f30/vllm/__init__.py",
+    "decode_slot_cache": [
+      {
+        "hits": 0,
+        "misses": 32768,
+        "shadow_hits": 32000,
+        "live_entries": 0
+      }
+    ],
+    "inplace_sampler": [
+      {
+        "reused_logits_calls": 0
+      }
+    ]
+  },
+  "stochastic_decode": [
+    {
+      "concurrency": 256,
+      "prompt_tokens": 32,
+      "output_tokens": 128,
+      "decode_tps_median": 23744.346343571793,
+      "all_five_token_hashes_match_previous_release": true,
+      "preemptions": 0
+    },
+    {
+      "concurrency": 256,
+      "prompt_tokens": 128,
+      "output_tokens": 128,
+      "decode_tps_median": 22718.27284550861,
+      "all_five_token_hashes_match_previous_release": true,
+      "preemptions": 0
+    }
+  ],
+  "prefill_including_first_output": [
+    {
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "fresh_prefill_tokens_per_second_including_first_output": 1936.9637719623825
+    },
+    {
+      "prompt_tokens": 128,
+      "concurrency": 16,
+      "fresh_prefill_tokens_per_second_including_first_output": 30173.815469379402
+    },
+    {
+      "prompt_tokens": 2048,
+      "concurrency": 1,
+      "fresh_prefill_tokens_per_second_including_first_output": 26987.729654093375
+    },
+    {
+      "prompt_tokens": 2048,
+      "concurrency": 16,
+      "fresh_prefill_tokens_per_second_including_first_output": 68391.8158208906
+    }
+  ],
+  "cache_shadow_predicted_noops_verified": 128000,
+  "wheel": {
+    "wheel_sha256": "ab0219c74650cb6182de1bad25148d030bb50845a361eddcd417590704e8db99",
+    "packaged_files": 146,
+    "missing_assets": [],
+    "unwanted_metadata_files": [],
+    "pins_old_vllm": false
+  },
+  "changes_for_current_upstream": [
+    "Sampler LogitsContext and ordered processor list, with forcing last",
+    "Sampler positional return_logprobs moved from argument 7 to 8",
+    "Cache connector skip_zeroing_group_ids forwarded, excludes cached no-op shortcut",
+    "Removed old vLLM 0.29.0 plugin dependency pin",
+    "Portable matched inference verifier and new interface regression tests"
+  ],
+  "limitations": [
+    "Single RTX 5090 tested; no multi-GPU, speculative decoding or prefix-sharing qualification",
+    "FP4 expert activations inherit the approximate profile; parity is to that profile, not full BF16 or broad quality evaluation",
+    "Full multi-GB canonical conversion not repeated this round; codec corruption and profile tests passed",
+    "Prefill throughput is synthetic token-ID input and includes first output/scheduler; no new long-context quality claim",
+    "Initial expert repacking emitted recoverable allocator OOM warnings; all runs completed",
+    "User fork remained read-only: port prepared in an isolated clone and delivered as a patch; no commit or push"
+  ],
+  "target_repository_modified": false,
+  "target_index_modified": false
+}

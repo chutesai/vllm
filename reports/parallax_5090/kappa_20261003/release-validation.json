@@ -1,0 +1,61 @@
+{
+  "upstream_base": "1454b7172796c00955ae32e3fe865b98b262855a",
+  "checkpoint_revision": "15975e88320522284396bfe15c02e533d8b49dc4",
+  "standalone_model_parity": {
+    "scope": "Standalone package port, unchanged profile, 256 sequences x 128 prompt + 128 generated; greedy numerical screen, not throughput or broad quality evaluation",
+    "tokens_identical": true,
+    "logprobs_exact": true,
+    "max_abs_logprob_delta": 0.0,
+    "mesh_imports_blocked": true,
+    "token_sha256": "f556495914cf33391bfeb03effe9d90de01070d0060707887957530acefc2aaa",
+    "package_path": "/workspace/parallax-kappa/release-check/parallax_inference/__init__.py"
+  },
+  "wheel": {
+    "wheel_build_passed": true,
+    "wheel_install_and_import_passed": true,
+    "required_assets_present": true,
+    "apple_metadata_excluded": true,
+    "prepared_profile_matches_validated_options": true,
+    "mesh_imports_blocked": true,
+    "wheel": "parallax_vllm_plugin-0.1.0-py3-none-any.whl",
+    "packaged_files": 146
+  },
+  "cpu_tests": {
+    "passed": 5,
+    "command": "PYTHONPATH=experiments/kappa_release_20261003 .venv/bin/python -m pytest --confcutdir=experiments/kappa_release_20261003/tests experiments/kappa_release_20261003/tests/kernels/parallax/test_kappa_release.py -q"
+  },
+  "serving": {
+    "scope": "Standalone package reproduction, RTX 5090, engine context8192, stochastic temperature0.8/top_p0.95; 4warmups/5trials, full decode graph, slot cache and in-place sampler; no new optimization gain claim",
+    "rows": [
+      {
+        "prompt_tokens": 32,
+        "concurrency": 256,
+        "output_tokens": 128,
+        "decode_tps_median": 23851.0192767619,
+        "sampled_token_hashes_match_saved_baseline": true,
+        "preemptions": 0
+      },
+      {
+        "prompt_tokens": 128,
+        "concurrency": 256,
+        "output_tokens": 128,
+        "decode_tps_median": 22822.593516280114,
+        "sampled_token_hashes_match_saved_baseline": true,
+        "preemptions": 0
+      }
+    ]
+  },
+  "limitations": [
+    "Single GPU SM120a runtime qualified; prefix caching, speculative and multi-GPU unsupported",
+    "FP4 expert activation approximation inherited from validated baseline; no whole-model lossless BF16 claim",
+    "Canonical converter port passed codec tests; full multi-GB export conversion not repeated this release round",
+    "Startup emitted recoverable CUDA allocator OOM warnings; model loading and all parity/serving checks completed successfully",
+    "Target fork is read-only in this session; patch prepared against existing working tree, not applied or committed"
+  ],
+  "patch_checks": {
+    "integration_applies_to_existing_fork_worktree": true,
+    "integration_applied_in_temporary_checkout_and_result_bytes_verified": true,
+    "complete_patch_applies_to_upstream_file_snapshot": true,
+    "fork_worktree_and_index_unmodified": true
+  }
+}

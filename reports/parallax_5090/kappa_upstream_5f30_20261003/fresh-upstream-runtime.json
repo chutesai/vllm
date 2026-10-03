@@ -1,0 +1,38 @@
+{
+  "upstream_commit": "5f30fc7031cae49bf51073fc953d419b08f8887c",
+  "vllm_version": "0.30.1rc1.dev619+g5f30fc703",
+  "vllm_source_path": "/workspace/parallax-kappa/upstream-port-5f30/vllm/__init__.py",
+  "native_extension_path": "/workspace/parallax-kappa/upstream-port-5f30/vllm/_C_stable_libtorch.abi3.so",
+  "native_extension_sha256": "2c7acf128ec9591a5c071b24eb0f386d4054e903f8b2fd885739821cfd58b6a7",
+  "native_wheel_metadata": [
+    {
+      "package_name": "vllm",
+      "version": "0.30.1rc1.dev619+g5f30fc703",
+      "build_tag": null,
+      "python_tag": "cp38",
+      "abi_tag": "abi3",
+      "platform_tag": "manylinux_2_28_aarch64",
+      "variant": null,
+      "filename": "vllm-0.30.1rc1.dev619+g5f30fc703-cp38-abi3-manylinux_2_28_aarch64.whl",
+      "path": "../../../5f30fc7031cae49bf51073fc953d419b08f8887c/vllm-0.30.1rc1.dev619%2Bg5f30fc703-cp38-abi3-manylinux_2_28_aarch64.whl"
+    },
+    {
+      "package_name": "vllm",
+      "version": "0.30.1rc1.dev619+g5f30fc703",
+      "build_tag": null,
+      "python_tag": "cp38",
+      "abi_tag": "abi3",
+      "platform_tag": "manylinux_2_28_x86_64",
+      "variant": null,
+      "filename": "vllm-0.30.1rc1.dev619+g5f30fc703-cp38-abi3-manylinux_2_28_x86_64.whl",
+      "path": "../../../5f30fc7031cae49bf51073fc953d419b08f8887c/vllm-0.30.1rc1.dev619%2Bg5f30fc703-cp38-abi3-manylinux_2_28_x86_64.whl"
+    }
+  ],
+  "plugin_path": "/workspace/parallax-kappa/upstream-port-5f30/parallax_inference/__init__.py",
+  "torch": "2.13.0+cu132",
+  "triton": "3.7.1",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "torch_cuda": "13.2",
+  "cpu_tests_passed": 12,
+  "test_command": ".venv/bin/python -m pytest --confcutdir=tests/kernels/parallax tests/kernels/parallax/test_kappa_release.py -q"
+}

@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 
 _CLASS_TO_MODULE: dict[str, str] = {
+    "ParallaxConfig": "vllm.transformers_utils.configs.parallax",
     "AfmoeConfig": "vllm.transformers_utils.configs.afmoe",
     "AXK1Config": "vllm.transformers_utils.configs.AXK1",
     "BagelConfig": "vllm.transformers_utils.configs.bagel",

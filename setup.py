@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import ctypes
+import hashlib
 import importlib.util
 import json
 import logging
@@ -199,7 +200,8 @@ def bundle_tcmalloc(build_lib: str) -> None:
 
 class CMakeExtension(Extension):
     def __init__(self, name: str, cmake_lists_dir: str = ".", **kwa) -> None:
-        super().__init__(name, sources=[], py_limited_api=not is_freethreaded(), **kwa)
+        limited_api = kwa.pop("py_limited_api", not is_freethreaded())
+        super().__init__(name, sources=[], py_limited_api=limited_api, **kwa)
         self.cmake_lists_dir = os.path.abspath(cmake_lists_dir)
 
 
@@ -269,6 +271,9 @@ class cmake_build_ext(build_ext):
             "-DCMAKE_BUILD_TYPE={}".format(cfg),
             "-DVLLM_TARGET_DEVICE={}".format(VLLM_TARGET_DEVICE),
         ]
+
+        if all(e.name == "vllm._parallax_C" for e in self.extensions):
+            cmake_args.append("-DVLLM_PARALLAX_ONLY=ON")
 
         verbose = envs.VERBOSE
         if verbose:
@@ -474,14 +479,25 @@ class cmake_build_ext(build_ext):
 
 
 class precompiled_build_ext(build_ext):
-    """Disables extension building when using precompiled binaries."""
+    """Use upstream binaries and compile fork-specific Parallax CUDA sources."""
 
     def run(self) -> None:
-        return
+        custom = [e for e in self.extensions if e.name == "vllm._parallax_C"]
+        if not custom or CUDA_HOME is None or get_nvcc_cuda_version() < Version("13.0"):
+            return
+        builder = cmake_build_ext(self.distribution)
+        builder.ensure_finalized()
+        builder.extensions = custom
+        # CMake caches Ninja, Python and Torch paths. Isolated PEP 517 builds
+        # get a new temporary environment on every invocation.
+        build_env = hashlib.sha256(sys.prefix.encode()).hexdigest()[:12]
+        builder.build_temp = os.path.join(self.build_temp, f"parallax-{build_env}")
+        builder.build_lib = self.build_lib
+        builder.inplace = self.inplace
+        builder.build_extensions()
 
     def build_extensions(self) -> None:
-        print("Skipping build_ext: using precompiled extensions.")
-        return
+        self.run()
 
 
 class precompiled_build_rust(build_rust):
@@ -1380,6 +1396,9 @@ if _is_hip():
     ext_modules.append(CMakeExtension(name="vllm._rocm_C"))
 
 if _is_cuda():
+    ext_modules.append(
+        CMakeExtension(name="vllm._parallax_C", optional=True, py_limited_api=False)
+    )
     ext_modules.append(CMakeExtension(name="vllm.vllm_flash_attn._vllm_fa2_C"))
     if USE_PRECOMPILED_EXTENSIONS or (
         CUDA_HOME and get_nvcc_cuda_version() >= Version("12.3")
@@ -1448,6 +1467,7 @@ package_data = {
         "distributed/kv_transfer/kv_connector/v1/hf3fs/utils/*.cpp",
         # Built-in multimodal chat template fallbacks (registry.py)
         "transformers_utils/chat_templates/*.jinja",
+        "transformers_utils/configs/parallax_*.json",
         "third_party/flash_linear_attention/LICENSE",
         # DeepGEMM JIT include headers (vendored via cmake)
         "third_party/deep_gemm/include/**/*.cuh",

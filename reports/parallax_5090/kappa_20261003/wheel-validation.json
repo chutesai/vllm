@@ -1,0 +1,10 @@
+{
+  "wheel_build_passed": true,
+  "wheel_install_and_import_passed": true,
+  "required_assets_present": true,
+  "apple_metadata_excluded": true,
+  "prepared_profile_matches_validated_options": true,
+  "mesh_imports_blocked": true,
+  "wheel": "parallax_vllm_plugin-0.1.0-py3-none-any.whl",
+  "packaged_files": 146
+}

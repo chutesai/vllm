@@ -1,0 +1,53 @@
+{
+  "base_commit": "5f30fc7031cae49bf51073fc953d419b08f8887c",
+  "native_integration": true,
+  "separate_plugin_required": false,
+  "tests": {
+    "passed": 16,
+    "environment": "installed wheel; PYTHONPATH puts wheel before source; pytest --import-mode=importlib",
+    "ruff": "passed targeted source checks",
+    "git_diff_check": "passed",
+    "precommit_changed_files_manual": "passed all applicable hooks, including mypy 3.10/3.11/3.12/3.13",
+    "precommit_all_files_macos": "fails only three Linux API errors in unchanged upstream files, for each mypy version",
+    "precommit_all_files_linux": "passed; exit 0; all 34 manual-stage hooks; ordinary permission enforcement",
+    "lint_receipt": "lint-validation.json"
+  },
+  "numerical_parity": {
+    "generated_tokens": 32768,
+    "tokens_identical": true,
+    "logprobs_exact": true,
+    "max_abs_logprob_delta": 0.0,
+    "shadow_cache_checks": 32000,
+    "sampled_serving_trials_identical": 10,
+    "installed_wheel_small_batch_tokens_identical": [
+      1,
+      4
+    ]
+  },
+  "throughput": {
+    "device": "RTX 5090",
+    "decode_concurrency": 256,
+    "decode_median_tokens_per_second_prompt32": 23853.437397702735,
+    "decode_median_tokens_per_second_prompt128": 22809.77103329067,
+    "prefill_concurrency": 16,
+    "prefill_prompt_tokens": 2048,
+    "prefill_tokens_per_second_including_first_output": 67946.09412121563
+  },
+  "qualification": "same approximate single-component sparse FP4 expert activation profile; not a BF16 quality equivalence claim",
+  "build": "exact upstream precompiled native binaries plus CMake-compiled Parallax extension; source-only full upstream build not exercised",
+  "wheel": "native-integration-wheel-smoke.json",
+  "wheel_sources": "native-integration-wheel-sources.json",
+  "changes_staged": false,
+  "changes_committed": false,
+  "post_lint": {
+    "parity": "post-lint-parity.json",
+    "wheel": "post-lint-wheel-smoke.json",
+    "wheel_sources": "post-lint-wheel-sources.json",
+    "small_batch": "post-lint-wheel-small.json",
+    "small_batch_tokens_identical": [
+      1,
+      4
+    ],
+    "source_manifest": "post-lint-source-sha256.json"
+  }
+}

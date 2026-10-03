@@ -1,0 +1,430 @@
+{
+  "checkpoint_revision": "15975e88320522284396bfe15c02e533d8b49dc4",
+  "hardware": "RTX 5090",
+  "precision": {
+    "trunk": "BF16",
+    "recurrent_state": "FP32",
+    "experts": "exact sparse ternary weight codes, baseline single-component NVFP4 activations (approximate vs BF16)",
+    "lm_head": "BF16 operands, FP32 accumulation/output"
+  },
+  "defaults_changed": false,
+  "scope": "Aggregate sampled decode, excluding prefill; concurrency 256; 128 generated tokens; temperature .8/top_p .95; five repeats/four warmups; baseline/candidate/baseline.",
+  "serving": {
+    "decode-v28-grid": {
+      "engine_context": 256,
+      "rows": [
+        {
+          "prompt_tokens": 32,
+          "baseline_pooled_median_tps": 24800.626974735947,
+          "candidate_median_tps": 25263.40859742621,
+          "gain_percent": 1.866007755213972,
+          "all_sampled_hashes_exact": true,
+          "preemptions": 0
+        },
+        {
+          "prompt_tokens": 128,
+          "baseline_pooled_median_tps": 23922.040714231844,
+          "candidate_median_tps": 24327.129568885797,
+          "gain_percent": 1.6933708101790623,
+          "all_sampled_hashes_exact": true,
+          "preemptions": 0
+        }
+      ]
+    },
+    "decode-chunked": {
+      "engine_context": 8192,
+      "rows": [
+        {
+          "prompt_tokens": 32,
+          "baseline_pooled_median_tps": 22044.99108126463,
+          "candidate_median_tps": 23702.181830206588,
+          "gain_percent": 7.517311950061778,
+          "all_sampled_hashes_exact": true,
+          "preemptions": 0
+        },
+        {
+          "prompt_tokens": 128,
+          "baseline_pooled_median_tps": 21047.123344173102,
+          "candidate_median_tps": 22604.523108158544,
+          "gain_percent": 7.399584914850643,
+          "all_sampled_hashes_exact": true,
+          "preemptions": 0
+        }
+      ]
+    }
+  },
+  "gdn-precomputed-component": {
+    "state_exact": true,
+    "output_exact": true,
+    "max_state_delta": 0.0,
+    "finite": true,
+    "steps": 32,
+    "timings": [
+      {
+        "kind": "baseline-0",
+        "ms_18_layers": 3.6638773600260417,
+        "trials": [
+          3.6656031290690105,
+          3.6646761576334637,
+          3.66279780069987,
+          3.6638773600260417,
+          3.662056477864583
+        ],
+        "finite": true
+      },
+      {
+        "kind": "candidate-1",
+        "ms_18_layers": 3.622863006591797,
+        "trials": [
+          3.622363789876302,
+          3.622863006591797,
+          3.6228843688964845,
+          3.622655995686849,
+          3.6229321797688803
+        ],
+        "finite": true
+      },
+      {
+        "kind": "baseline-2",
+        "ms_18_layers": 3.665388743082682,
+        "trials": [
+          3.667132822672526,
+          3.665388743082682,
+          3.6658729553222655,
+          3.6635945638020835,
+          3.663891092936198
+        ],
+        "finite": true
+      }
+    ]
+  },
+  "msa-chunked-component": [
+    {
+      "actual": 159,
+      "configured": 2049,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.037496159076690676,
+        0.008584319949150085,
+        0.03758336067199707
+      ]
+    },
+    {
+      "actual": 159,
+      "configured": 2049,
+      "chunk": 8,
+      "exact": true,
+      "ms": [
+        0.03750351905822754,
+        0.008448799848556518,
+        0.038053278923034665
+      ]
+    },
+    {
+      "actual": 159,
+      "configured": 2049,
+      "chunk": 16,
+      "exact": true,
+      "ms": [
+        0.037496480941772464,
+        0.00843775987625122,
+        0.03759119987487793
+      ]
+    },
+    {
+      "actual": 255,
+      "configured": 8192,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.13936559677124025,
+        0.016412479877471922,
+        0.1430022430419922
+      ]
+    },
+    {
+      "actual": 255,
+      "configured": 8192,
+      "chunk": 8,
+      "exact": true,
+      "ms": [
+        0.13945919990539551,
+        0.012523679733276368,
+        0.14520688056945802
+      ]
+    },
+    {
+      "actual": 255,
+      "configured": 8192,
+      "chunk": 16,
+      "exact": true,
+      "ms": [
+        0.13947312355041505,
+        0.012104959487915038,
+        0.1453172779083252
+      ]
+    },
+    {
+      "actual": 2048,
+      "configured": 8192,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.2042616081237793,
+        0.1034984016418457,
+        0.20548240661621095
+      ]
+    },
+    {
+      "actual": 2048,
+      "configured": 8192,
+      "chunk": 8,
+      "exact": true,
+      "ms": [
+        0.20559215545654297,
+        0.10399824142456054,
+        0.20586719512939453
+      ]
+    },
+    {
+      "actual": 2048,
+      "configured": 8192,
+      "chunk": 16,
+      "exact": true,
+      "ms": [
+        0.20558895111083986,
+        0.15792863845825195,
+        0.20626655578613282
+      ]
+    },
+    {
+      "actual": 4097,
+      "configured": 8192,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.27193504333496094,
+        0.20736127853393554,
+        0.27237520217895506
+      ]
+    },
+    {
+      "actual": 4097,
+      "configured": 8192,
+      "chunk": 8,
+      "exact": true,
+      "ms": [
+        0.27222991943359376,
+        0.21963951110839844,
+        0.2727233505249023
+      ]
+    },
+    {
+      "actual": 4097,
+      "configured": 8192,
+      "chunk": 16,
+      "exact": true,
+      "ms": [
+        0.27283151626586916,
+        0.32444305419921876,
+        0.27354591369628906
+      ]
+    },
+    {
+      "actual": 159,
+      "configured": 32768,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.5732175827026367,
+        0.035871679782867434,
+        0.5773395156860351
+      ]
+    },
+    {
+      "actual": 159,
+      "configured": 32768,
+      "chunk": 8,
+      "exact": true,
+      "ms": [
+        0.57398193359375,
+        0.020717599391937257,
+        0.5784451293945313
+      ]
+    },
+    {
+      "actual": 159,
+      "configured": 32768,
+      "chunk": 16,
+      "exact": true,
+      "ms": [
+        0.5744523239135743,
+        0.014165920019149781,
+        0.5788758468627929
+      ]
+    }
+  ],
+  "msa-chunked-boundaries": [
+    {
+      "actual": 1,
+      "configured": 8192,
+      "chunk": 1,
+      "exact": true,
+      "ms": [
+        0.1355355167388916,
+        0.034019360542297365,
+        0.13693759918212892
+      ]
+    },
+    {
+      "actual": 1,
+      "configured": 8192,
+      "chunk": 2,
+      "exact": true,
+      "ms": [
+        0.13641023635864258,
+        0.018873759508132935,
+        0.1397000026702881
+      ]
+    },
+    {
+      "actual": 1,
+      "configured": 8192,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.14394623756408692,
+        0.011299680471420288,
+        0.14441360473632814
+      ]
+    },
+    {
+      "actual": 128,
+      "configured": 8192,
+      "chunk": 1,
+      "exact": true,
+      "ms": [
+        0.14548175811767577,
+        0.03483776092529297,
+        0.14308095932006837
+      ]
+    },
+    {
+      "actual": 128,
+      "configured": 8192,
+      "chunk": 2,
+      "exact": true,
+      "ms": [
+        0.14562879562377928,
+        0.019693440198898314,
+        0.14438991546630858
+      ]
+    },
+    {
+      "actual": 128,
+      "configured": 8192,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.14569791793823242,
+        0.01212000012397766,
+        0.14595600128173827
+      ]
+    },
+    {
+      "actual": 129,
+      "configured": 8192,
+      "chunk": 1,
+      "exact": true,
+      "ms": [
+        0.14593791961669922,
+        0.03481807947158813,
+        0.14306608200073243
+      ]
+    },
+    {
+      "actual": 129,
+      "configured": 8192,
+      "chunk": 2,
+      "exact": true,
+      "ms": [
+        0.14575936317443847,
+        0.019692959785461425,
+        0.1444801616668701
+      ]
+    },
+    {
+      "actual": 129,
+      "configured": 8192,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.14618831634521484,
+        0.012113440036773681,
+        0.1460428810119629
+      ]
+    },
+    {
+      "actual": 8192,
+      "configured": 8192,
+      "chunk": 1,
+      "exact": true,
+      "ms": [
+        0.4102489471435547,
+        0.45540447235107423,
+        0.41042705535888674
+      ]
+    },
+    {
+      "actual": 8192,
+      "configured": 8192,
+      "chunk": 2,
+      "exact": true,
+      "ms": [
+        0.4099116897583008,
+        0.42613040924072265,
+        0.4109747314453125
+      ]
+    },
+    {
+      "actual": 8192,
+      "configured": 8192,
+      "chunk": 4,
+      "exact": true,
+      "ms": [
+        0.41115249633789064,
+        0.4144076919555664,
+        0.41200000762939454
+      ]
+    }
+  ],
+  "long_context_parity": {
+    "engine_context": 8192,
+    "prompt_tokens": 2048,
+    "output_tokens": 128,
+    "concurrency": 16,
+    "sample_logprob_hashes_exact": true,
+    "sample_hashes_exact": true
+  },
+  "source_sha256": {
+    "model.py": "ba08eea70228d2b421e9eef4324811d9a854148052f32055cc736f1bc393afdf",
+    "paged_msa_chunked_scores.py": "fc8ab274e9072e0c8e38486c33616403ece73898fb7f1501e06c3f7e0fe3b22e",
+    "gdn2_precomputed.py": "f0cf61a164925186ecdc6650c416c980f31b4319208664229b4386a5ef03e05e",
+    "run_decode_v28_grid.py": "5f2c8263605d07b4b4f80b4d9b952e260b1e1ffefcf4538d69a8190fc6a01637",
+    "run_decode_chunked.py": "4184da7023e031a4bc830e17e74bf363a82248672bd87c8ee72988e56f9a58e4",
+    "tune_msa_chunked_scores.py": "93b3f2336e6a8aeb7d204beba47fe797a6acd9a083a9e6ee06fa2adb2dfd53bd",
+    "tune_msa_chunked_boundaries.py": "3ca49a3355a9710c1834c16951cda591bdfc8cee2a6eb3c3f9361062e53329a4"
+  },
+  "change": "Opt-in GDN grid order 3 plus causal block-chunked sparse-attention scoring; score arithmetic and top-k selection unchanged. Original sparse attention module remains the default.",
+  "deployment_flags": {
+    "single_sparse_fp4_kernel": "v28",
+    "gdn2_decode_grid_order": 3,
+    "msa_chunked_decode_index_scores": true
+  },
+  "candidate_remote_model": "/workspace/parallax-kappa/model-canonical-dual-warp-grid3-chunked",
+  "quality_limit": "Exact component scores/positions/top-k and sampled hashes for tested shapes, including a 2048-token prompt followed by 128-token generation. Not a new broad quality evaluation of baseline NVFP4 activations.",
+  "rejected_candidate": "Precompute GDN gates: exact 32-step output/state parity but only ~1.15% recurrent component gain; not integrated.",
+  "long_context_component_limit": "At an actual 8192-token sequence in an 8192 reservation, chunk4 scorer was about 0.6% slower in component timing; short and partial-context sequences benefit most.",
+  "profile_summary": "decode-chunked-profile-summary.json"
+}

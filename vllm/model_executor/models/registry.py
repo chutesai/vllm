@@ -107,6 +107,7 @@ _TEXT_GENERATION_MODELS = {
     "Rnj1ForCausalLM": ("rnj1", "Rnj1ForCausalLM"),
     "Gemma3nForCausalLM": ("gemma3n", "Gemma3nForCausalLM"),
     "Gemma4ForCausalLM": ("gemma4", "Gemma4ForCausalLM"),
+    "ParallaxForCausalLM": ("parallax", "ParallaxForCausalLM"),
     "Qwen3NextForCausalLM": ("qwen3_next", "Qwen3NextForCausalLM"),
     "Qwen4ExpForCausalLM": (
         "vllm.models.qwen4_exp",

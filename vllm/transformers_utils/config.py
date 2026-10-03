@@ -79,6 +79,7 @@ class LazyConfigDict(dict):
 
 
 _CONFIG_REGISTRY: dict[str, type[PreTrainedConfig]] = LazyConfigDict(
+    parallax="ParallaxConfig",
     afmoe="AfmoeConfig",
     axk1="AXK1Config",
     bagel="BagelConfig",

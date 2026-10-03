@@ -1,0 +1,614 @@
+{
+  "model": "/workspace/parallax-kappa/model-canonical-dual-warp-grid3-selection",
+  "weights": "loaded model weights (auto)",
+  "dtype": "bfloat16",
+  "sampling": {
+    "temperature": 0.8,
+    "top_p": 0.95
+  },
+  "sample_logprobs": null,
+  "capture_sizes_requested": "1,4,256",
+  "synchronized_arrivals": true,
+  "eager": false,
+  "full_decode_graph": true,
+  "max_batched_tokens": 32768,
+  "gpu_memory_utilization": 0.7,
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "torch": "2.13.0+cu132",
+  "timing": "generation wall time including prefill and scheduler",
+  "output_lengths": [
+    1
+  ],
+  "context_limit": 262144,
+  "engine_context": 8192,
+  "warmup_generations_per_shape": 1,
+  "repeats": 3,
+  "inplace_sampler": true,
+  "decode_slot_cache": true,
+  "decode_slot_shadow": false,
+  "decode_slot_cache_install": [
+    {
+      "enabled": true,
+      "shadow": false,
+      "groups": [
+        [
+          "MambaManager",
+          8192,
+          "none"
+        ],
+        [
+          "MambaManager",
+          8192,
+          "none"
+        ],
+        [
+          "MambaManager",
+          8192,
+          "none"
+        ],
+        [
+          "SlidingWindowManager",
+          608,
+          null
+        ],
+        [
+          "SlidingWindowManager",
+          608,
+          null
+        ],
+        [
+          "FullAttentionManager",
+          304,
+          null
+        ],
+        [
+          "FullAttentionManager",
+          1216,
+          null
+        ]
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "status": "complete",
+      "prompt_tokens": 128,
+      "output_tokens": 1,
+      "concurrency": 1,
+      "seconds": 0.06836442649364471,
+      "trials_seconds": [
+        0.07001709938049316,
+        0.06738334894180298,
+        0.06836442649364471
+      ],
+      "fresh_prefill_tokens_per_second_including_first_output": 1872.3187857342607,
+      "output_tokens_per_second_including_prefill": 14.627490513548912,
+      "input_plus_output_tokens_per_second": 1886.9462762478097,
+      "request_timing_trials": [
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.06822419166564941,
+          "ttft_max_seconds": 0.06822419166564941,
+          "ttft_min_seconds": 0.06822419166564941,
+          "ttft_p95_seconds": 0.06822419166564941,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.06568598747253418,
+          "ttft_max_seconds": 0.06568598747253418,
+          "ttft_min_seconds": 0.06568598747253418,
+          "ttft_p95_seconds": 0.06568598747253418,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.0666501522064209,
+          "ttft_max_seconds": 0.0666501522064209,
+          "ttft_min_seconds": 0.0666501522064209,
+          "ttft_p95_seconds": 0.0666501522064209,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        }
+      ],
+      "output_token_sha256_per_trial": [
+        "ae6b94c8122744f4a1953b61648b94f8aa6a7855dc1ebe37e30d81a9201456aa",
+        "334129faaa9c4c52a993015e4d97f3fc2fc0c776593d7ff12b9e34d243410e7c",
+        "95df4c957f46e6d391c1f3212610b174720afd5ed68f9c41cc8eca8664d2c443"
+      ],
+      "inplace_sampler_report": [
+        {
+          "reused_logits_calls": 4
+        }
+      ],
+      "decode_slot_cache_report": [
+        {
+          "hits": 0,
+          "misses": 4,
+          "shadow_hits": 0,
+          "live_entries": 0
+        }
+      ]
+    },
+    {
+      "status": "complete",
+      "prompt_tokens": 128,
+      "output_tokens": 1,
+      "concurrency": 16,
+      "seconds": 0.07052750885486603,
+      "trials_seconds": [
+        0.07458233833312988,
+        0.07015341520309448,
+        0.07052750885486603
+      ],
+      "fresh_prefill_tokens_per_second_including_first_output": 29038.314740627604,
+      "output_tokens_per_second_including_prefill": 226.86183391115316,
+      "input_plus_output_tokens_per_second": 29265.176574538757,
+      "request_timing_trials": [
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.06933844089508057,
+          "ttft_max_seconds": 0.07164525985717773,
+          "ttft_min_seconds": 0.06734561920166016,
+          "ttft_p95_seconds": 0.07164525985717773,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.06530880928039551,
+          "ttft_max_seconds": 0.0674750804901123,
+          "ttft_min_seconds": 0.06333756446838379,
+          "ttft_p95_seconds": 0.0674750804901123,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.0658566951751709,
+          "ttft_max_seconds": 0.0680854320526123,
+          "ttft_min_seconds": 0.06383347511291504,
+          "ttft_p95_seconds": 0.0680854320526123,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        }
+      ],
+      "output_token_sha256_per_trial": [
+        "e41da9e92b3f4305cb20c43be5a51a61d71d2c8399a1661336592d56b8728b34",
+        "f779610c2d917b991ff6079f116fe6c4d68e524a69bb6a68eb6227fb0eea2076",
+        "764ecc30047be92ac0449a7cbb8c0e182496b886ac920ff2f7565bd1f7877a69"
+      ],
+      "inplace_sampler_report": [
+        {
+          "reused_logits_calls": 8
+        }
+      ],
+      "decode_slot_cache_report": [
+        {
+          "hits": 0,
+          "misses": 68,
+          "shadow_hits": 0,
+          "live_entries": 0
+        }
+      ]
+    },
+    {
+      "status": "complete",
+      "prompt_tokens": 2048,
+      "output_tokens": 1,
+      "concurrency": 1,
+      "seconds": 0.07553227990865707,
+      "trials_seconds": [
+        0.07496239989995956,
+        0.07608231157064438,
+        0.07553227990865707
+      ],
+      "fresh_prefill_tokens_per_second_including_first_output": 27114.235165106806,
+      "output_tokens_per_second_including_prefill": 13.239372639212307,
+      "input_plus_output_tokens_per_second": 27127.47453774602,
+      "request_timing_trials": [
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.07289671897888184,
+          "ttft_max_seconds": 0.07289671897888184,
+          "ttft_min_seconds": 0.07289671897888184,
+          "ttft_p95_seconds": 0.07289671897888184,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.07429146766662598,
+          "ttft_max_seconds": 0.07429146766662598,
+          "ttft_min_seconds": 0.07429146766662598,
+          "ttft_p95_seconds": 0.07429146766662598,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.07345438003540039,
+          "ttft_max_seconds": 0.07345438003540039,
+          "ttft_min_seconds": 0.07345438003540039,
+          "ttft_p95_seconds": 0.07345438003540039,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        }
+      ],
+      "output_token_sha256_per_trial": [
+        "f038d010263a6926074a300338643ab8cc5bfed0fd0adff53b7e881c2356e870",
+        "233dc421024f1e37dbeae4e75adbf6ce80c89bc6f61e0b9ff7151fa95c27468a",
+        "4cdad7d4fd27e3513dd04aa8d7de43445ae6cf8abb2b71a4e47c9780062bb106"
+      ],
+      "inplace_sampler_report": [
+        {
+          "reused_logits_calls": 12
+        }
+      ],
+      "decode_slot_cache_report": [
+        {
+          "hits": 0,
+          "misses": 72,
+          "shadow_hits": 0,
+          "live_entries": 0
+        }
+      ]
+    },
+    {
+      "status": "complete",
+      "prompt_tokens": 2048,
+      "output_tokens": 1,
+      "concurrency": 16,
+      "seconds": 0.4822646602988243,
+      "trials_seconds": [
+        0.4798969104886055,
+        0.4822646602988243,
+        0.4827713593840599
+      ],
+      "fresh_prefill_tokens_per_second_including_first_output": 67946.09412121563,
+      "output_tokens_per_second_including_prefill": 33.17680377012482,
+      "input_plus_output_tokens_per_second": 67979.27092498576,
+      "request_timing_trials": [
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.4745885133743286,
+          "ttft_max_seconds": 0.4769783020019531,
+          "ttft_min_seconds": 0.47242140769958496,
+          "ttft_p95_seconds": 0.4769783020019531,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.4773815870285034,
+          "ttft_max_seconds": 0.4797241687774658,
+          "ttft_min_seconds": 0.47524046897888184,
+          "ttft_p95_seconds": 0.4797241687774658,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        },
+        {
+          "peak_kv_cache_fraction": 0,
+          "peak_running_requests": 0,
+          "peak_waiting_requests": 0,
+          "preemptions": 0,
+          "ttft_median_seconds": 0.4776707887649536,
+          "ttft_max_seconds": 0.4800248146057129,
+          "ttft_min_seconds": 0.4755098819732666,
+          "ttft_p95_seconds": 0.4800248146057129,
+          "decode_output_tokens_per_second": null,
+          "per_request_mean_itl_seconds": null,
+          "per_request_mean_itl_p95_seconds": null
+        }
+      ],
+      "output_token_sha256_per_trial": [
+        "56e11fa5a70122836cefa20ba4724d29bfada38b4c7ee62309c20c1cb6e0a723",
+        "d9b7076e64c1250cdf82f2011ded129620dc8c7f258ad1bc29f2e64ad9f9f820",
+        "c106057fe69c43ef6fe1fa2b2737f392e3b9c024d99ef39ab594ab1cc76ce9f2"
+      ],
+      "inplace_sampler_report": [
+        {
+          "reused_logits_calls": 16
+        }
+      ],
+      "decode_slot_cache_report": [
+        {
+          "hits": 0,
+          "misses": 136,
+          "shadow_hits": 0,
+          "live_entries": 0
+        }
+      ]
+    }
+  ],
+  "benchmark_sha256": "821ff6290d4a75615c0c5a8e209421ebc4d7763c03fa4dd8e0b87b1219c59db2",
+  "vllm": "0.30.1rc1.dev619+g5f30fc703.parallax",
+  "implementation_sha256": {
+    "model_executor/layers/attention/block_attention_residual.py": "4f45d580e6370c23aa65594752d38b335c533191bf79fb4c140c05baa769e96b",
+    "model_executor/layers/attention/block_residual_norm.py": "2bc65667c625eaa2e3a98c106dd9dd6f478a1bfaa80a0a5982df7cf0e2fe58e4",
+    "model_executor/layers/attention/ops/parallax/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "model_executor/layers/attention/ops/parallax/block_residual.py": "47bdf02740297de7b08c4129310770377b2f7bb1d1be09f9cf73e676f2a14bc4",
+    "model_executor/layers/attention/ops/parallax/compact_cache.py": "83018810e4559003b21b0988aebfa6d577914c1e34d2f2b7b85f6f003f3067cf",
+    "model_executor/layers/attention/ops/parallax/dense_bf16_residual_attention.py": "d6320d4757df8bfdd9ad5f785e879a4a19be2793b00c1fcc4469820f66d14e90",
+    "model_executor/layers/attention/ops/parallax/dense_fp16_attention.py": "1eb2ca72d437158d3babc06decb18b0ffbbc2df3e9b4e9c14c02b7d4c94459af",
+    "model_executor/layers/attention/ops/parallax/dense_fp32_attention.py": "93937075432529c15cf8c19aa2676521f6a6df840a363de0f4962067d1f5059f",
+    "model_executor/layers/attention/ops/parallax/direct_selected_attention.py": "794d6958d76f7f7f461c8ebb16f11eb165c762a6e08c0b7142af14205f800aed",
+    "model_executor/layers/attention/ops/parallax/grouped_scalar_attention.py": "891e72d07be4c470f4b355b48e0e26ef3220817ce2543b02304abdd72730de96",
+    "model_executor/layers/attention/ops/parallax/grouped_scalar_heads.py": "a370af9fb1c4b23be6eea725ced8afb704b58dd3a07eb0c5cdf45f84462b449c",
+    "model_executor/layers/attention/ops/parallax/hot_keys.py": "0f088bc8722e2a33f25455def3121565fc85a0e1dca1f92c7e259701813e0865",
+    "model_executor/layers/attention/ops/parallax/key_latent_attention.py": "040f92182ed0a3396fcc9839d016b0ac8b5b94d772e5ebe20cdc202cbb1dd8c2",
+    "model_executor/layers/attention/ops/parallax/latent_cached_attention.py": "7acb23bc9e56f069857c622527631e2aeb3bb3eb7ade8d461d7252472684884e",
+    "model_executor/layers/attention/ops/parallax/latent_decode.py": "4a3b0280a13df60750bca09d1562aa75c0837d7cc0d219735043b30def40cd45",
+    "model_executor/layers/attention/ops/parallax/msa_late_v.py": "1df32e1a8ba94f8e4268261970457d96134fc6d5bf3834d85dcbbce83851027d",
+    "model_executor/layers/attention/ops/parallax/msa_selection_finalize.py": "8f4cc25994cbe18e5c1ef480b1e90f73a7c5a73c94b04d038058d261fc5ea5fb",
+    "model_executor/layers/attention/ops/parallax/paged_msa.py": "5db5c5e6597d19f549d62a497676ba0c59594007670ca0139e593bb73f5b4ec0",
+    "model_executor/layers/attention/ops/parallax/paged_msa_chunked_scores.py": "43046d62f98e627b89b45d4ea728a8df709b468c2da4bf114392f52426169053",
+    "model_executor/layers/attention/ops/parallax/reconstructed_cache.py": "4c25ff0494245e7585babbec36bb4be2d23228e733e5020f603a4605b10fe958",
+    "model_executor/layers/attention/ops/parallax/selected_attention.py": "83eaea82dafee3600ecc9a43ca2bfb80cfd02cb785865ad1562c07acb080d8bb",
+    "model_executor/layers/attention/ops/parallax/split_selected_attention.py": "f3f4987ba95b788d1811195eee7cda56f3814896c97618737d559a43b5bd2e28",
+    "model_executor/layers/fused_moe/parallax/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "model_executor/layers/fused_moe/parallax/dense_shared_bf16.py": "ca54ff35bcb2c76a240f5df06c3240a915a5fb3f270f9226183d8ffe557eca41",
+    "model_executor/layers/fused_moe/parallax/fused_pointwise.py": "a9972e2fc25660844c3582dc2246efdf7b611969299730ac8352a36a72695e66",
+    "model_executor/layers/fused_moe/parallax/packed_bf16.py": "a68149417aff6b13b71b1f09a6efcc20779785494124df9ac7b2581d6627e418",
+    "model_executor/layers/fused_moe/parallax/packed_sparse_bf16.py": "e8c6bfc3507f5e53ee5a20a8056353514df237b099adbeeeadca0bc6ccb281cf",
+    "model_executor/layers/fused_moe/parallax/pair_lut_bf16.py": "7d3340480c42807cf3bb7ebe291efd64154428d4a6c4d1b3b9e1ebad1974b74b",
+    "model_executor/layers/fused_moe/parallax/residual.py": "16eed7169e32fa4fe4bfa801411bb45f7dda553d8447ba7a689915f9fb34ac91",
+    "model_executor/layers/fused_moe/parallax/shared_pointwise.py": "0c480b108c4d26d83cfa0f66b02b6ff5c968f7b1c03e72fcfefb82b3a62dce47",
+    "model_executor/layers/fused_moe/parallax/sparse_ternary.py": "de195843d700df182e6be7da988803c736d6775509f3ec8b8f5463d10e122519",
+    "model_executor/layers/fused_moe/parallax/sparse_ternary_fp4.py": "b555c8cae813a16a7fab3981b65b5ee871433cf9bbc2ce05a1c9a3286bac648a",
+    "model_executor/layers/fused_moe/parallax/ternary_decode.py": "10164f2a5342e0ee68d28819377cb12468a56c512df3d733cfc006afce13739e",
+    "model_executor/layers/mamba/gdn/parallax.py": "e428f4a113e34f7f6583b962104ebd83e59b7a52e5dd54a231bf60229eab6cb2",
+    "model_executor/layers/mamba/gdn/parallax_conv.py": "b314a5a572d53a7081e7501f1a49f4540fd438eec6bf8a77d3818e9cc3ea7f35",
+    "model_executor/layers/mamba/gdn/parallax_decode.py": "68b01a89153c87134be62f5564bea59847f571f62e1d3d607fbdaaa5a234024b",
+    "model_executor/layers/mamba/gdn/parallax_fp16.py": "0bae9b23e3fb15fb78f00bf3e7c20f2c7cca65a9d4a3ccd1d37bb56324f27fd3",
+    "model_executor/layers/mamba/gdn/parallax_prefill.py": "2b75c0ac712e85e2c736b11f01ab81ebc44509077505a6a3cdbf316b31c4706c",
+    "model_executor/layers/mamba/gdn/parallax_prefill_state16.py": "844a24661d1388607080050f4eeb5e3474969263574263f36eeaec0b36b82f05",
+    "model_executor/layers/parallax_linear.py": "8318cefb79733bb590a0d27ffeca3434b7a59b4cd5e767b211dedca56a8406fc",
+    "model_executor/model_loader/parallax.py": "5fbe6cddb9587f186c2bdc13ae2e6d1b4c951880b753dbbcc63b41b04ff95c9f",
+    "model_executor/model_loader/parallax_export.py": "731c31bcd12427e2a32d9c20b32e2ec9f0e164292375894b2c18e9a322cbd315",
+    "model_executor/models/parallax.py": "8b3c51f8f255d514c7a34b399c151f234675839e42678c7bc761562695d00e4a",
+    "transformers_utils/configs/parallax.py": "2a6e087d8f4ed852b68f6021c8ac4268cc0e13345903d360ec82a8dad7010e64",
+    "transformers_utils/configs/parallax_defaults.json": "72b0846dd1e0710ddbdc6fb45dadcb593cb745e249da8ac5ca27c4d5195c49f3",
+    "transformers_utils/configs/parallax_sm120.json": "1af705b7bbe13511b5e40ae98c034a7c4baac77771d3ee08a60a1f54380e2e2b",
+    "v1/core/sched/parallax_decode.py": "dfd4c59777b3888d178024935e0f9674e614b479dd3a9d9ff7a77df7ef0c6c4e",
+    "v1/worker/gpu/parallax_sampler.py": "ee26d18a31098ee028b6830f59ef6f7d8b3a620aa7a453c23ea7f3674ed5c612",
+    "v1/worker/gpu/parallax_timing.py": "d6b5b374ce0958c2371768568686107280779e03f99c450dc64298e0ba9a3911"
+  },
+  "model_config": {
+    "adaptive_loop_after": "R",
+    "adaptive_loop_block_depth": 1,
+    "adaptive_loop_block_positions": null,
+    "adaptive_loop_count": 0,
+    "adaptive_loop_depth": 1,
+    "adaptive_loop_positions": null,
+    "atlas_memory_after": "R*W",
+    "atlas_memory_count": 0,
+    "atlas_memory_dim": null,
+    "atlas_memory_gate_init": -5.0,
+    "atlas_memory_positions": null,
+    "atlas_memory_segment_size": 64,
+    "block_attn_res_block_size": null,
+    "block_attn_res_n_blocks": 8,
+    "csa_compress_ratio": 4,
+    "csa_index_chunk_size": 8192,
+    "csa_index_head_dim": 128,
+    "csa_index_n_heads": 64,
+    "csa_index_topk": 512,
+    "d_model": 1152,
+    "d_state": 64,
+    "dense_activation": "relu2",
+    "dense_intermediate_size": null,
+    "dsa_attention_chunk_size": 32,
+    "dsa_index_chunk_size": 64,
+    "dsa_index_head_dim": 128,
+    "dsa_index_n_heads": 32,
+    "dsa_index_topk": 2048,
+    "expand": 2,
+    "expert_activation": "relu2",
+    "expert_clip_val": 8.0,
+    "expert_family_core_gamma": 0.0,
+    "expert_family_core_intermediate_size": 0,
+    "expert_family_core_lanes": 0,
+    "expert_int8": false,
+    "expert_ternary": true,
+    "final_norm_unit_gain": true,
+    "gdn2_chunk_size": 64,
+    "gdn2_decay_bias": 2.0,
+    "gdn2_erase_bias": 0.0,
+    "gdn2_factored_projections": "",
+    "gdn2_factored_rank": 0,
+    "gdn2_factored_residual": false,
+    "gdn2_head_dim": 128,
+    "gdn2_n_heads": 9,
+    "gdn2_write_bias": 0.0,
+    "gdn2_write_gate_groups": 0,
+    "global_attention_rope": true,
+    "global_attention_schedule": "",
+    "global_attention_type": "msa",
+    "hca_compress_ratio": 128,
+    "hca_local_window_size": null,
+    "hca_o_groups": 8,
+    "hca_o_lora_rank": null,
+    "hca_q_lora_rank": null,
+    "hca_rope_head_dim": null,
+    "hca_use_tilelang": true,
+    "head_dim": 64,
+    "headdim": 64,
+    "hybrid_override_pattern": "REREWERE*EREWERERE*EWEREREWE*EREREWERE*EREWERERE*EWEREREWE*ERERE",
+    "latent_shared_gdn2_chunk_size": 64,
+    "latent_shared_gdn2_head_dim": 64,
+    "latent_shared_mixer": "none",
+    "latent_shared_mixer_gate_init": -4.0,
+    "logit_scale_learnable": true,
+    "m2rnn_gradient_clipping": 1.0,
+    "m2rnn_kernel_size": 4,
+    "m2rnn_key_head_dim": 64,
+    "m2rnn_num_heads": null,
+    "m2rnn_value_head_dim": 16,
+    "mamba3_chunk_size": 16,
+    "mamba3_mimo": false,
+    "mamba3_mimo_pattern": null,
+    "mamba3_mimo_rank": 4,
+    "mamba3_rope_fraction": 0.5,
+    "mamba3_siso_chunk_size": 64,
+    "max_seq_len": 262144,
+    "mhc_init_mode": "identity",
+    "mhc_n_streams": 4,
+    "mhc_sinkhorn_iters": 20,
+    "mla_kv_latent_dim": null,
+    "moe_hash_counts_path": null,
+    "moe_hash_counts_sha256": null,
+    "moe_hash_seed": 42,
+    "moe_intermediate_size": 2304,
+    "moe_latent_dim": 384,
+    "moe_router_bias_update_rate": 0.001,
+    "moe_router_dim": null,
+    "moe_router_fp32": true,
+    "moe_router_input_source": "prelatent",
+    "moe_router_load_balancing": "quantile",
+    "moe_router_min_owned_selections": 0,
+    "moe_router_normalize_input": false,
+    "moe_router_prototype_temperature": 1.0,
+    "moe_router_prototypes_per_expert": 1,
+    "moe_router_quantile_ema": 0.9,
+    "moe_router_selection_mode": "global_topk",
+    "moe_router_semantic_aligned_rows": 0,
+    "moe_router_semantic_free_rows": 0,
+    "moe_router_semantic_lanes": 0,
+    "moe_router_type": "linear",
+    "moe_router_z_loss_coef": 0.0001,
+    "msa_block_size": 128,
+    "msa_force_local_blocks": 1,
+    "msa_head_dim": 128,
+    "msa_index_loss_every": 1,
+    "msa_index_loss_tokens": 256,
+    "msa_index_loss_weight": 0.01,
+    "msa_index_query_chunk": 256,
+    "msa_index_rank": null,
+    "msa_index_warmup_steps": 32768,
+    "msa_kv_latent_dim": 256,
+    "msa_sparse_topk": 16,
+    "mtp_loss_weight": 0.3,
+    "mtp_n_heads": 0,
+    "mtp_shared_weights": true,
+    "n_kv_heads": 4,
+    "n_q_heads": 16,
+    "n_routed_experts": 128,
+    "n_shared_experts": 1,
+    "num_experts_per_tok": 12,
+    "rope_theta": 1000000.0,
+    "routed_scaling_factor": 1.0,
+    "shared_expert_intermediate_size": null,
+    "shared_expert_output_scale": 1.0,
+    "shared_expert_use_routed_latent": false,
+    "shared_expert_zero_init_output": true,
+    "shared_latent_dim": null,
+    "sliding_attention_rope": true,
+    "sliding_attention_type": "gqa",
+    "sliding_window_size": 2048,
+    "tie_word_embeddings": true,
+    "tied_input_scale": null,
+    "use_block_attn_res": true,
+    "use_mamba3": false,
+    "use_mhc": false,
+    "vocab_size": 128384,
+    "model_type": "parallax",
+    "architectures": [
+      "ParallaxForCausalLM"
+    ],
+    "random_weights": false,
+    "expert_backend": "packed_bf16",
+    "dense_precision": "bf16",
+    "checkpoint_format": "kappa_bf16",
+    "max_position_embeddings": 262144,
+    "logit_scale_max": 3.0,
+    "inference_attention_mode": "sparse",
+    "bf16_full_accum": true,
+    "fused_routing": true,
+    "fast_router_sort": true,
+    "fused_decode_gates": true,
+    "parallel_gdn2_conv": true,
+    "parallel_gdn2_prefill": true,
+    "tuned_gdn2_tiles": true,
+    "head_dtype": "float32",
+    "fused_residual_accumulation": true,
+    "unique_expert_decode": true,
+    "expert_block_n": 128,
+    "native_sparse_bf16": false,
+    "pair_lut_decode": true,
+    "overlap_shared_experts": true,
+    "fused_shared_ops": true,
+    "expanded_sparse_prefill": false,
+    "expanded_sparse_block_k": 64,
+    "dense_fp32_msa_prefill": true,
+    "grouped_scalar_msa_prefill": false,
+    "msa_full_selection_fastpath": false,
+    "joined_bf16_gdn2": true,
+    "dense_probability_components": 3,
+    "dense_query_tile": 128,
+    "dense_warps": 8,
+    "single_sparse_fp4_components": 1,
+    "single_sparse_fp4_kernel": "v28",
+    "single_sparse_fp4_prefill": true,
+    "single_sparse_fp4_ungated_reduce": true,
+    "gdn2_joined_max_tokens": 1024,
+    "tuned_joined_bf16_gemm": true,
+    "fused_shared_bf16_gemm": true,
+    "single_sparse_fp4_decode_block_m": 16,
+    "gdn2_decode_block_v": 32,
+    "gdn2_decode_num_warps": 4,
+    "gdn2_decode_load_cache": ".cg",
+    "gdn2_decode_store_cache": ".cs",
+    "single_sparse_fp4_ungated_min_tokens": 256,
+    "single_sparse_fp4_combine_block_n": 128,
+    "gdn2_decode_grid_order": 3,
+    "msa_chunked_decode_index_scores": true,
+    "msa_fused_decode_selection": true
+  }
+}

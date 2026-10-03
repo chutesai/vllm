@@ -1,0 +1,31 @@
+{
+  "comparison": "old plugin port versus installed native wheel, greedy small-batch pair-LUT path",
+  "rows": [
+    {
+      "concurrency": 1,
+      "prompt_tokens": 128,
+      "output_tokens": 32,
+      "tokens_identical": true,
+      "control_hashes": [
+        "5018bb7143864ce9d15597d65809b4cad13160a072dcdf974f6269cd433c2b06"
+      ],
+      "wheel_hashes": [
+        "5018bb7143864ce9d15597d65809b4cad13160a072dcdf974f6269cd433c2b06"
+      ]
+    },
+    {
+      "concurrency": 4,
+      "prompt_tokens": 128,
+      "output_tokens": 32,
+      "tokens_identical": true,
+      "control_hashes": [
+        "dbd42ac55b962c74b6c0b54ec846333ce05cfdc70071ac3b6dfaede67f1a9dc8"
+      ],
+      "wheel_hashes": [
+        "dbd42ac55b962c74b6c0b54ec846333ce05cfdc70071ac3b6dfaede67f1a9dc8"
+      ]
+    }
+  ],
+  "candidate_process_exit_code": 0,
+  "source_note": "Earlier concurrent packaging run exited with SIGBUS after writing results; this isolated wheel run completed normally."
+}

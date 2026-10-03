@@ -1,0 +1,15 @@
+{
+  "wheel": "vllm-0.30.1rc1.dev619+g5f30fc703.parallax-cp312-cp312-linux_x86_64.whl",
+  "wheel_sha256": "d4f5e8049dcdb34113c96cc1bd377e67a9f97dfc6b3b394a575ef1680905fafa",
+  "vllm_path": "/workspace/parallax-kappa/native-wheel-installed/vllm/__init__.py",
+  "extension_path": "/workspace/parallax-kappa/native-wheel-installed/vllm/_parallax_C.cpython-312-x86_64-linux-gnu.so",
+  "config_type": "ParallaxConfig",
+  "model_class": "vllm.model_executor.models.parallax.ParallaxForCausalLM",
+  "extension_import_passed": true,
+  "plugin_package_present": false,
+  "blocked_packages": [
+    "mesh",
+    "parallax_inference"
+  ],
+  "member_count": 5315
+}

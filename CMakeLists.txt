@@ -111,6 +111,15 @@ endif()
 #
 find_package(Torch REQUIRED)
 
+option(VLLM_PARALLAX_ONLY "Build only the Parallax extension" OFF)
+if(VLLM_PARALLAX_ONLY AND VLLM_TARGET_DEVICE STREQUAL "cuda")
+  clear_cuda_gencode_flags(PARALLAX_UNUSED_ARCH_FLAGS)
+endif()
+include(cmake/parallax.cmake)
+if(VLLM_PARALLAX_ONLY)
+  return()
+endif()
+
 # Supported NVIDIA architectures.
 # This check must happen after find_package(Torch) because that's when CMAKE_CUDA_COMPILER_VERSION gets defined
 if(DEFINED CMAKE_CUDA_COMPILER_VERSION AND

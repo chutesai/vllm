@@ -1,0 +1,165 @@
+{
+  "pipeline_source": ".github/workflows/pre-commit.yml",
+  "command": "python -m pre_commit run --all-files --hook-stage manual",
+  "platform": "Linux x86_64; separate lint venv, Python 3.12",
+  "scope": "Complete indexed snapshot of upstream base plus all new/modified fork files; real fork remains unstaged and uncommitted",
+  "base_commit": "5f30fc7031cae49bf51073fc953d419b08f8887c",
+  "exit_code": 0,
+  "hooks": [
+    {
+      "name": "ruff check",
+      "result": "Passed"
+    },
+    {
+      "name": "ruff format",
+      "result": "Passed"
+    },
+    {
+      "name": "typos",
+      "result": "Passed"
+    },
+    {
+      "name": "clang-format",
+      "result": "Passed"
+    },
+    {
+      "name": "markdownlint-cli2",
+      "result": "Passed"
+    },
+    {
+      "name": "Lint GitHub Actions workflow files",
+      "result": "Passed"
+    },
+    {
+      "name": "shellcheck",
+      "result": "Passed"
+    },
+    {
+      "name": "pip-compile",
+      "result": "Passed"
+    },
+    {
+      "name": "pip-compile-rocm",
+      "result": "Passed"
+    },
+    {
+      "name": "pip-compile-xpu",
+      "result": "Passed"
+    },
+    {
+      "name": "pip-compile-cpu",
+      "result": "Passed"
+    },
+    {
+      "name": "pip-compile-docs",
+      "result": "Passed"
+    },
+    {
+      "name": "check json",
+      "result": "Passed"
+    },
+    {
+      "name": "reformat test/nightly-torch.txt to be in sync with test/cuda.in",
+      "result": "Passed"
+    },
+    {
+      "name": "Check auto-label rules still match real files",
+      "result": "Passed"
+    },
+    {
+      "name": "Check agent instruction files and skills",
+      "result": "Passed"
+    },
+    {
+      "name": "Check every Buildkite step declares an explicit key",
+      "result": "Passed"
+    },
+    {
+      "name": "Check new tests are wired into Buildkite CI",
+      "result": "Passed"
+    },
+    {
+      "name": "Run mypy for Python 3.10",
+      "result": "Passed"
+    },
+    {
+      "name": "Run mypy for Python 3.11",
+      "result": "Passed"
+    },
+    {
+      "name": "Run mypy for Python 3.12",
+      "result": "Passed"
+    },
+    {
+      "name": "Run mypy for Python 3.13",
+      "result": "Passed"
+    },
+    {
+      "name": "Lint PNG exports from excalidraw",
+      "result": "Passed"
+    },
+    {
+      "name": "Check SPDX headers",
+      "result": "Passed"
+    },
+    {
+      "name": "Check root lazy imports",
+      "result": "Passed"
+    },
+    {
+      "name": "Check for spaces in all filenames",
+      "result": "Passed"
+    },
+    {
+      "name": "Update Dockerfile dependency graph",
+      "result": "Passed"
+    },
+    {
+      "name": "Test non-root entrypoint wrapper",
+      "result": "Passed"
+    },
+    {
+      "name": "Check for forbidden imports",
+      "result": "Passed"
+    },
+    {
+      "name": "Prevent new 'torch.cuda' APIs call",
+      "result": "Passed"
+    },
+    {
+      "name": "Validate configuration has default values and that each field has a docstring",
+      "result": "Passed"
+    },
+    {
+      "name": "Validate docker/versions.json matches Dockerfile",
+      "result": "Passed"
+    },
+    {
+      "name": "Check for boolean ops in with-statements",
+      "result": "Passed"
+    },
+    {
+      "name": "Suggestion",
+      "result": "Passed"
+    }
+  ],
+  "precommit_config_sha256": "60e0358107cd361ffe87155551449e74556b63be3addc1cf3f9074677597ca6a",
+  "raw_log_sha256": "bcfc84f0a934cdd18567fa5058083bb54be475cfd5f5e3e27a3ef3a192f575f3",
+  "raw_log_local_path": "/Users/jdurbin/git/mesh/experiments/kappa_native_integration_20261003/precommit-ci-linux-passed.log",
+  "permission_model": "Child process drops CAP_DAC_OVERRIDE and CAP_DAC_READ_SEARCH so the upstream read-only HOME test runs under ordinary permission enforcement. No hook/rule changes or SKIP overrides.",
+  "earlier_environment_failures": [
+    "Whole-repo macOS run: unchanged upstream Linux-only os/mmap APIs fail mypy.",
+    "Whole-repo Linux root run: upstream read-only HOME entrypoint test fails because root bypasses mode bits; all other hooks pass."
+  ],
+  "runtime_revalidation": {
+    "tests_passed": 16,
+    "generated_tokens_identical": 32768,
+    "logprobs_exact": true,
+    "installed_wheel_small_batch_tokens_identical": [
+      1,
+      4
+    ],
+    "wheel_sources_match": 52
+  },
+  "source_manifest": "post-lint-source-sha256.json"
+}

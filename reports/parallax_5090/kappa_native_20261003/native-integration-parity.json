@@ -1,0 +1,25 @@
+{
+  "scope": "256 sequences x 128 prompt + 128 generated; matched greedy numerical screen, not a quality evaluation",
+  "tokens_identical": true,
+  "logprobs_exact": true,
+  "max_abs_logprob_delta": 0.0,
+  "optimized": true,
+  "shadow": true,
+  "token_sha256": "f556495914cf33391bfeb03effe9d90de01070d0060707887957530acefc2aaa",
+  "model_path": "/workspace/parallax-kappa/native-port-5f30/vllm/model_executor/models/parallax.py",
+  "vllm_version": "0.30.1rc1.dev619+g5f30fc703.parallax",
+  "vllm_path": "/workspace/parallax-kappa/native-port-5f30/vllm/__init__.py",
+  "decode_slot_cache": [
+    {
+      "hits": 0,
+      "misses": 32768,
+      "shadow_hits": 32000,
+      "live_entries": 0
+    }
+  ],
+  "inplace_sampler": [
+    {
+      "reused_logits_calls": 0
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "scope": "Standalone package port, unchanged profile, 256 sequences x 128 prompt + 128 generated; greedy numerical screen, not throughput or broad quality evaluation",
+  "tokens_identical": true,
+  "logprobs_exact": true,
+  "max_abs_logprob_delta": 0.0,
+  "mesh_imports_blocked": true,
+  "token_sha256": "f556495914cf33391bfeb03effe9d90de01070d0060707887957530acefc2aaa",
+  "package_path": "/workspace/parallax-kappa/release-check/parallax_inference/__init__.py"
+}

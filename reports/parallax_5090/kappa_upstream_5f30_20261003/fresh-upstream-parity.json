@@ -1,0 +1,11 @@
+{
+  "scope": "Fresh upstream 5f30 port, unchanged profile, 256 sequences x 128 prompt + 128 generated; greedy numerical screen, not throughput or broad quality evaluation",
+  "tokens_identical": true,
+  "logprobs_exact": true,
+  "max_abs_logprob_delta": 0.0,
+  "mesh_imports_blocked": true,
+  "token_sha256": "f556495914cf33391bfeb03effe9d90de01070d0060707887957530acefc2aaa",
+  "package_path": "/workspace/parallax-kappa/upstream-port-5f30/parallax_inference/__init__.py",
+  "vllm_version": "0.30.1rc1.dev619+g5f30fc703",
+  "vllm_path": "/workspace/parallax-kappa/upstream-port-5f30/vllm/__init__.py"
+}

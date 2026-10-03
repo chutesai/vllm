@@ -1,0 +1,36 @@
+{
+  "scope": "Additional decode optimization probes; no new candidate promoted. Serving measurements remain from the previous validated selection-fusion round.",
+  "recommended_model": "/workspace/parallax-kappa/model-canonical-dual-warp-grid3-selection",
+  "new_serving_speedup": null,
+  "router_real_input_audit": {
+    "layer_calls": 96,
+    "rows_per_call": 256,
+    "id_mismatched_rows": 0,
+    "max_gate_error": 2.086162567138672e-07,
+    "note": "Identical real inputs, first three captured calls per layer; not a longer-trajectory equivalence proof."
+  },
+  "baseline_repeat": {
+    "tokens_identical": true,
+    "logprobs_exact": true,
+    "max_abs_logprob_delta": 0.0,
+    "scope": "Repeated unchanged baseline; identical execution shapes"
+  },
+  "expert_probes": {
+    "v30": {
+      "baseline_ms": 0.05762880047162374,
+      "candidate_ms": 0.057743999361991885,
+      "latency_change_pct": 0.19989812285763353,
+      "bit_exact": true,
+      "promoted": false,
+      "scope": "Single trained expert layer; captured batch-256 input; entire expert pair including dispatch/quantization/reduction; graphs; candidates bracketed by baseline."
+    },
+    "v31": {
+      "baseline_ms": 0.057700266440709434,
+      "candidate_ms": 0.059826400876045224,
+      "latency_change_pct": 3.684791364907336,
+      "bit_exact": true,
+      "promoted": false,
+      "scope": "Single trained expert layer; captured batch-256 input; entire expert pair including dispatch/quantization/reduction; graphs; candidates bracketed by baseline."
+    }
+  }
+}

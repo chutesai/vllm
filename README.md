@@ -19,6 +19,11 @@ For events, please visit [vllm.ai/events](https://vllm.ai/events) to join us.
 
 ---
 
+## Parallax fork
+
+This fork includes native Parallax/Kappa model support. See [installation,
+checkpoint conversion and reproduction](docs/models/parallax.md).
+
 ## About
 
 vLLM is a fast and easy-to-use library for LLM inference and serving.
