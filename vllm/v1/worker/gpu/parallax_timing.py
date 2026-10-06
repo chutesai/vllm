@@ -48,6 +48,13 @@ def install_model_timing(model):
     _hook_module(model, model, "model")
     for i, layer in enumerate(model.layers):
         _hook_module(model, layer, f"layer.{i}.{type(layer).__name__}")
+        if type(layer).__name__ in ("EDALayer", "GDN2Layer"):
+            for name, child in layer.named_modules():
+                if name and (
+                    isinstance(child, torch.nn.Linear)
+                    or type(child).__name__ == "BatchedEDAProjection"
+                ):
+                    _hook_module(model, child, f"mixer.{i}.{name}")
     original = model.compute_logits
 
     @functools.wraps(original)
@@ -63,6 +70,10 @@ def install_model_timing(model):
 
 class ComponentTimingWorker:
     model_runner: "GPUModelRunner"
+
+    def parallax_install_model_timing(self):
+        install_model_timing(self.model_runner.get_model())
+        return True
 
     def parallax_start_cpu_profile(self):
         import cProfile
@@ -118,7 +129,7 @@ class ComponentTimingWorker:
         states = {
             str(i): [str(t.dtype) for t in layer.kv_cache]
             for i, layer in enumerate(model.layers)
-            if type(layer).__name__ == "GDN2Layer"
+            if type(layer).__name__ in ("GDN2Layer", "EDALayer")
         }
         return {
             "last_step_gpu_ms": timings,

@@ -128,3 +128,126 @@ def test_native_config_rejects_retired_unshipped_execution_paths(options):
 
     with pytest.raises(ValueError):
         ParallaxConfig(**options)
+
+
+@pytest.mark.parametrize(
+    "optimization",
+    [
+        "none",
+        "pointwise",
+        "tiles",
+        "combined",
+        "joined",
+        "gated",
+        "tuned",
+        "stable",
+        "auto",
+    ],
+)
+def test_lambda_profile_keeps_dense_attention_and_eda_geometry(tmp_path, optimization):
+    root = Path(__file__).resolve().parents[3]
+    config = json.loads(
+        (root / "vllm/transformers_utils/configs/parallax_sm120.json").read_text()
+    )
+    config.update(
+        checkpoint_format="lambda_bf16",
+        recurrent_backend="eda",
+        hybrid_override_pattern="WERERERE*EREWERERE*EWEREREWE*EREREWERE*EREWERERE*EWERERERE*EREWE",
+        tie_word_embeddings=True,
+        eda_erase_rank=16,
+        eda_decay_rank=None,
+        eda_gate_lower=-5.0,
+        eda_onorm_eps=1e-6,
+        eda_scale_mode="dk^-0.5",
+        n_shared_experts=1,
+        final_norm_unit_gain=True,
+        moe_router_fp32=True,
+        sliding_window_size=2048,
+        logit_scale_max=3.0,
+        pinned_swa_windows=[[0, 2048], [62, 2048]],
+        msa_index_query_chunk=256,
+    )
+    source = tmp_path / "lambda"
+    source.mkdir()
+    (source / "config.json").write_text(json.dumps(config))
+    (source / "model.safetensors.index.json").write_text("{}")
+    output = prepare(source, tmp_path / "profile", optimization)
+    optimization = "stable" if optimization == "auto" else optimization
+    installed = json.loads((output / "config.json").read_text())
+    assert installed["inference_attention_mode"] == "dense"
+    assert installed["joined_bf16_gdn2"] is False
+    assert installed["head_dtype"] == "bfloat16"
+    assert installed["lambda_fused_eda_pointwise"] == (
+        optimization in ("pointwise", "combined", "joined", "gated", "tuned", "stable")
+    )
+    assert installed["lambda_joined_eda"] == (
+        optimization in ("joined", "gated", "tuned", "stable")
+    )
+    assert installed["lambda_fused_eda_decode"] == (
+        optimization in ("gated", "tuned", "stable")
+    )
+    assert installed["lambda_stable_joined_eda"] == (optimization == "stable")
+    assert installed["eda_decode_block_v"] == (
+        64
+        if optimization in ("tiles", "combined", "joined", "gated", "tuned", "stable")
+        else 16
+    )
+    if optimization in ("tuned", "stable"):
+        assert installed["eda_decode_block_v_fp32"] == 128
+        assert installed["eda_decode_num_warps_fp32"] == 8
+        assert installed["eda_decode_num_warps_fp16"] == 4
+        assert installed["eda_decode_small_grid_order"] == "head"
+    if optimization == "stable":
+        assert installed["eda_joined_gemm_tile"] == [32, 64, 128, 4, 3]
+    for key in (
+        "hybrid_override_pattern",
+        "pinned_swa_windows",
+        "msa_index_query_chunk",
+        "eda_erase_rank",
+        "logit_scale_max",
+        "tie_word_embeddings",
+    ):
+        assert installed[key] == config[key]
+    config["eda_erase_rank"] = 8
+    (source / "config.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="eda_erase_rank"):
+        prepare(source, tmp_path / "bad")
+
+
+@pytest.mark.parametrize("mesh_norm", [False, True])
+def test_lambda_norm_loader_preserves_unit_gain_and_bounded_scale(mesh_norm):
+    """Selecting upstream norm must still apply the export's normalization policy."""
+    from vllm.model_executor.model_loader.parallax import load_kappa_weights
+
+    model = torch.nn.Module()
+    model.config = SimpleNamespace(
+        random_weights=False,
+        recurrent_backend="eda",
+        lambda_mesh_norm=mesh_norm,
+        final_norm_unit_gain=True,
+        hybrid_override_pattern="",
+        n_routed_experts=0,
+        logit_scale_max=3.0,
+    )
+    model.layers = torch.nn.ModuleList()
+    model.final_norm = torch.nn.Module()
+    model.final_norm.weight = torch.nn.Parameter(torch.zeros(4, dtype=torch.float32))
+    model.register_buffer("logit_scale", torch.ones(1, dtype=torch.float32))
+    weight = torch.tensor([0.912345, 1.012345, 1.112345, 1.212345])
+    load_kappa_weights(
+        model,
+        [
+            ("final_norm.weight", weight),
+            ("final_norm.logit_scale_log", torch.tensor([1.1015625])),
+        ],
+    )
+    if mesh_norm:
+        expected = weight
+    else:
+        rounded = weight.bfloat16().float()
+        expected = (
+            (rounded / rounded.square().mean().add(1e-6).sqrt()).bfloat16().float()
+        )
+    assert model.final_norm.weight.dtype == torch.float32
+    torch.testing.assert_close(model.final_norm.weight, expected, atol=0, rtol=0)
+    torch.testing.assert_close(model.logit_scale, torch.tensor([3.0]))

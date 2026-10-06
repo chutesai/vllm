@@ -26,11 +26,19 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--optimized", action="store_true")
     parser.add_argument("--shadow", action="store_true")
+    parser.add_argument("--graph", action="store_true")
+    parser.add_argument("--state", choices=("fp32", "fp16"))
     args = parser.parse_args()
     if args.shadow and not args.optimized:
         parser.error("--shadow requires --optimized")
     corpus = json.loads(Path(args.inputs).read_text())
     extra = {}
+    if args.graph:
+        extra["compilation_config"] = {
+            "mode": 0,
+            "cudagraph_mode": "FULL_DECODE_ONLY",
+            "cudagraph_capture_sizes": [1, 4, 256],
+        }
     if args.optimized:
         extra["worker_extension_cls"] = (
             "vllm.v1.worker.gpu.parallax_sampler.PipelineOptimizationWorker"
@@ -48,8 +56,9 @@ def main():
         max_num_batched_tokens=32768,
         enable_prefix_caching=False,
         skip_tokenizer_init=True,
-        enforce_eager=True,
+        enforce_eager=not args.graph,
         gpu_memory_utilization=0.7,
+        hf_overrides={"gdn2_state_storage": args.state} if args.state else {},
         **extra,
     )
     try:
@@ -96,6 +105,11 @@ def main():
             torch.save({"tokens": tokens, "lp": lp}, args.save_baseline)
         base = torch.load(args.baseline, weights_only=True) if args.baseline else None
         receipt = {
+            "measurement_label": "MEASURED",
+            "state_storage": (
+                llm.llm_engine.vllm_config.model_config.hf_config.gdn2_state_storage
+            ),
+            "full_decode_graph": args.graph,
             "scope": (
                 "256 sequences x 128 prompt + 128 generated; "
                 "matched greedy numerical screen, not a quality evaluation"

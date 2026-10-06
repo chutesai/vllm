@@ -38,8 +38,19 @@ def load_kappa_weights(model, weights):
                 value = value.float().clamp(max=math.log(limit))
             copy("logit_scale", value.float().exp())
             continue
-        if name == "final_norm.weight" and model.config.final_norm_unit_gain:
-            value = value.to(targets[name].dtype)
+        if (
+            name == "final_norm.weight"
+            and model.config.final_norm_unit_gain
+            and (
+                model.config.recurrent_backend != "eda"
+                or not getattr(model.config, "lambda_mesh_norm", False)
+            )
+        ):
+            value = value.to(
+                torch.bfloat16
+                if model.config.recurrent_backend == "eda"
+                else targets[name].dtype
+            )
             value = (value.float() / value.float().square().mean().add(1e-6).sqrt()).to(
                 value.dtype
             )
@@ -91,6 +102,14 @@ def load_kappa_weights(model, weights):
                 "k_conv1d.weight",
                 "v_conv1d.weight",
             ):
+                if model.config.recurrent_backend == "eda" and suffix in (
+                    "q_proj.weight",
+                    "k_proj.weight",
+                    "v_proj.weight",
+                    "b_proj.weight",
+                ):
+                    copy(f"layers.{i}.{suffix}", value)
+                    continue
                 pending[(i, suffix)] = value.clone()
                 continue
             name = f"layers.{i}.{suffix}"
@@ -110,11 +129,13 @@ def load_kappa_weights(model, weights):
         def concat(parts, layer_index=i):
             return torch.cat([pending.pop((str(layer_index), p)) for p in parts], dim=0)
 
-        copy(
-            f"layers.{i}.qkv.weight",
-            concat(["q_proj.weight", "k_proj.weight", "v_proj.weight"]),
-        )
-        copy(f"layers.{i}.bw.weight", concat(["b_proj.weight", "w_proj.weight"]))
+        if model.config.recurrent_backend != "eda":
+            copy(
+                f"layers.{i}.qkv.weight",
+                concat(["q_proj.weight", "k_proj.weight", "v_proj.weight"]),
+            )
+        if model.config.recurrent_backend != "eda":
+            copy(f"layers.{i}.bw.weight", concat(["b_proj.weight", "w_proj.weight"]))
         copy(
             f"layers.{i}.conv_weight",
             concat(["q_conv1d.weight", "k_conv1d.weight", "v_conv1d.weight"]).squeeze(
@@ -174,7 +195,10 @@ def load_kappa_weights(model, weights):
             setattr(layer, "alpha_" + direction, scale)
             targets.pop(f"layers.{layer_index}.{direction}", None)
             del dense, codes
-    if getattr(model.config, "joined_bf16_gdn2", False):
+    if (
+        getattr(model.config, "joined_bf16_gdn2", False)
+        and model.config.recurrent_backend != "eda"
+    ):
         from ..layers.parallax_linear import join_linears
 
         for i, kind in enumerate(model.config.hybrid_override_pattern):
@@ -184,6 +208,48 @@ def load_kappa_weights(model, weights):
                     (layer.qkv, layer.bw, layer.f_proj[0], layer.g_proj[0])
                 )
                 loaded.add(f"layers.{i}.joined_input.weight")
+    if getattr(model.config, "lambda_joined_eda", False):
+        if model.config.recurrent_backend != "eda":
+            raise ValueError("Joined EDA projections require EDA")
+        from ..layers.parallax_linear import join_linears
+
+        for i, kind in enumerate(model.config.hybrid_override_pattern):
+            if kind == "R":
+                layer = model.layers[i]
+                layer.joined_input = join_linears(
+                    (
+                        layer.q_proj,
+                        layer.k_proj,
+                        layer.v_proj,
+                        layer.e_proj[0],
+                        layer.f_proj[0],
+                        layer.b_proj,
+                        layer.c_proj,
+                        layer.g_proj[0],
+                    )
+                )
+                if getattr(model.config, "lambda_stable_joined_eda", False):
+                    from ..layers.mamba.eda.parallax_eda_linear import (
+                        StableJoinedEDAProjection,
+                    )
+
+                    layer.joined_input = StableJoinedEDAProjection.from_joined(
+                        layer.joined_input,
+                        tile=getattr(
+                            model.config, "eda_joined_gemm_tile", (32, 64, 64, 4, 3)
+                        ),
+                    )
+                if layer.e_proj[1].in_features == layer.f_proj[1].in_features:
+                    from ..layers.mamba.eda.parallax_eda import BatchedEDAProjection
+
+                    layer.joined_ef = BatchedEDAProjection(
+                        torch.stack(
+                            (layer.e_proj[1].weight.T, layer.f_proj[1].weight.T)
+                        ).contiguous()
+                    )
+                loaded.update(
+                    {f"layers.{i}.joined_input.weight", f"layers.{i}.joined_input.bias"}
+                )
     if getattr(model.config, "single_sparse_fp4_components", 0):
         from ..layers.fused_moe.parallax.sparse_ternary_fp4 import (
             SparseTernaryFP4Experts,

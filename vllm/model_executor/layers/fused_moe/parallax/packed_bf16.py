@@ -14,6 +14,20 @@ from .ternary_decode import _combine
 
 
 @triton.jit
+def _combine_mesh_bf16(
+    X, ORDER, Y, N: tl.constexpr, TOP: tl.constexpr, BN: tl.constexpr
+):
+    token = tl.program_id(0)
+    ns = tl.program_id(1) * BN + tl.arange(0, BN)
+    acc = tl.full((BN,), 0, tl.float32)
+    for i in tl.static_range(TOP):
+        route = tl.load(ORDER + token * TOP + i)
+        value = tl.load(X + (token * TOP + route) * N + ns, ns < N, other=0)
+        acc = (acc + value).to(tl.bfloat16).to(tl.float32)
+    tl.store(Y + token * N + ns, acc, ns < N)
+
+
+@triton.jit
 def _grouped(
     X,
     W,
@@ -116,6 +130,7 @@ def moe(
     block_k=64,
     unique_decode=False,
     transposed=False,
+    mesh_bf16_reduce=False,
 ):
     tokens, latent = x.shape
     experts = up.shape[0]
@@ -183,7 +198,19 @@ def moe(
             TRANSPOSED=transposed,
             num_warps=4,
         )
-    _combine[(tokens, triton.cdiv(latent, 128))](
-        partial, y, latent, top, 128, triton.next_power_of_2(top)
-    )
+    if mesh_bf16_reduce:
+        order = ids.argsort(dim=-1).contiguous()
+        _combine_mesh_bf16[(tokens, triton.cdiv(latent, 128))](
+            partial,
+            order,
+            y,
+            latent,
+            top,
+            128,
+            enable_fp_fusion=False,
+        )
+    else:
+        _combine[(tokens, triton.cdiv(latent, 128))](
+            partial, y, latent, top, 128, triton.next_power_of_2(top)
+        )
     return y

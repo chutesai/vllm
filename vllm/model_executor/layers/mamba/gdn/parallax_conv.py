@@ -22,6 +22,7 @@ def _conv(
     SD0: tl.constexpr,
     SD1: tl.constexpr,
     SD2: tl.constexpr,
+    ROUND_BEFORE_SILU: tl.constexpr,
     BD: tl.constexpr,
 ):
     seq = tl.program_id(0)
@@ -41,6 +42,8 @@ def _conv(
         for t in range(begin, end):
             x = tl.load(X + t * XS + d, d < D, other=0).to(tl.float32)
             y = s0 * w0 + s1 * w1 + s2 * w2 + x * w3
+            if ROUND_BEFORE_SILU:
+                y = y.to(Y.dtype.element_ty).to(tl.float32)
             tl.store(Y + t * D + d, y * tl.sigmoid(y), d < D)
             s0, s1, s2 = s1, s2, x
         tl.store(S + base, s0, d < D)
@@ -63,6 +66,7 @@ def _parallel_conv(
     SD0: tl.constexpr,
     SD1: tl.constexpr,
     SD2: tl.constexpr,
+    ROUND_BEFORE_SILU: tl.constexpr,
     NS: tl.int32,
     BS: tl.constexpr,
     BT: tl.constexpr,
@@ -101,6 +105,8 @@ def _parallel_conv(
             y = (a + old) * w[None, :]
         else:
             y = y + (a + old) * w[None, :]
+    if ROUND_BEFORE_SILU:
+        y = y.to(Y.dtype.element_ty).to(tl.float32)
     tl.store(
         Y + t[:, None] * D + d[None, :],
         y * tl.sigmoid(y),
@@ -148,7 +154,9 @@ def _commit_conv(
         )
 
 
-def causal_conv(x, weight, state, starts, slots, reset, *, parallel=False):
+def causal_conv(
+    x, weight, state, starts, slots, reset, *, parallel=False, round_before_silu=False
+):
     """State is [slots, channels, 3], possibly a strided view of a page."""
     assert x.stride(1) == 1 and weight.is_contiguous()
     assert weight.shape == (x.shape[-1], 4)
@@ -167,6 +175,7 @@ def causal_conv(x, weight, state, starts, slots, reset, *, parallel=False):
             x.shape[-1],
             x.stride(0),
             *state.stride(),
+            round_before_silu,
             slots.numel(),
             triton.next_power_of_2(slots.numel()),
             16,
@@ -199,6 +208,7 @@ def causal_conv(x, weight, state, starts, slots, reset, *, parallel=False):
         x.shape[-1],
         x.stride(0),
         *state.stride(),
+        round_before_silu,
         128,
     )
     return y

@@ -34,6 +34,62 @@ class ParallaxConfig(PreTrainedConfig):
         ]
         self.expert_backend = defaults.get("expert_backend", "bf16")
         self.random_weights = defaults.get("random_weights", False)
+        self.recurrent_backend = defaults.get("recurrent_backend", "gdn2")
+        self.gdn2_state_storage = defaults.get("gdn2_state_storage", "fp32")
+        if self.recurrent_backend not in ("gdn2", "eda"):
+            raise ValueError("Unsupported Parallax recurrent backend")
+        if self.recurrent_backend == "eda":
+            for option in (
+                "lambda_mesh_rope",
+                "lambda_mesh_norm",
+                "lambda_fp32_attention",
+                "lambda_mesh_bf16_reduce",
+                "lambda_mesh_router",
+                "lambda_conv_round",
+                "lambda_force_fp4",
+                "lambda_torch_experts",
+            ):
+                setattr(self, option, defaults.get(option, False))
+            for key, expected in {
+                "eda_erase_rank": 16,
+                "eda_gate_lower": -5.0,
+                "eda_onorm_eps": 1e-6,
+                "eda_scale_mode": "dk^-0.5",
+            }.items():
+                if getattr(self, key, None) != expected:
+                    raise ValueError(f"Unqualified Lambda EDA setting: {key}")
+            if getattr(self, "eda_decay_rank", None) not in (None, 16):
+                raise ValueError("Lambda requires decay rank 16")
+            if self.gdn2_state_storage not in ("fp32", "fp16"):
+                raise ValueError("EDA state storage must be fp32 or fp16")
+            self.inference_attention_mode = "dense"
+            self.sliding_window_size = 2048
+            if not self.random_weights:
+                qualified = {
+                    "d_model": 1152,
+                    "gdn2_n_heads": 9,
+                    "gdn2_head_dim": 128,
+                    "n_q_heads": 16,
+                    "n_kv_heads": 4,
+                    "msa_head_dim": 128,
+                    "moe_latent_dim": 384,
+                    "moe_intermediate_size": 2304,
+                    "n_routed_experts": 128,
+                    "num_experts_per_tok": 12,
+                    "n_shared_experts": 1,
+                    "tie_word_embeddings": True,
+                    "final_norm_unit_gain": True,
+                    "moe_router_fp32": True,
+                    "logit_scale_max": 3.0,
+                    "msa_index_query_chunk": 256,
+                    "pinned_swa_windows": [[0, 2048], [62, 2048]],
+                    "hybrid_override_pattern": (
+                        "WERERERE*EREWERERE*EWEREREWE*EREREWERE*EREWERERE*EWERERERE*EREWE"
+                    ),
+                }
+                for key, expected in qualified.items():
+                    if getattr(self, key, None) != expected:
+                        raise ValueError(f"Unqualified Lambda architecture: {key}")
 
         if self.expert_backend not in ("bf16", "packed_bf16"):
             raise ValueError("Parallax supports bf16 and packed_bf16 expert backends")

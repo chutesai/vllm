@@ -63,6 +63,10 @@ def main():
     parser.add_argument("--decode-slot-cache", action="store_true")
     parser.add_argument("--decode-slot-shadow", action="store_true")
     parser.add_argument("--sample-logprobs", type=int)
+    parser.add_argument("--state", choices=("fp32", "fp16"), default="fp32")
+    parser.add_argument("--barrier-dir", type=Path)
+    parser.add_argument("--replica-id", type=int, default=0)
+    parser.add_argument("--replica-count", type=int, default=1)
     args = parser.parse_args()
     batches = [int(x) for x in args.batches.split(",")]
     prompts = [int(x) for x in args.prompts.split(",")]
@@ -128,8 +132,8 @@ def main():
                 "vllm.v1.worker.gpu.parallax_sampler.InplaceSamplerWorker"
             )
     if args.component_timing:
-        if not config_data.get("component_timing", False):
-            raise ValueError("Component timing requires model config opt-in")
+        if not args.eager:
+            raise ValueError("Component timing requires eager diagnostic execution")
         extra["worker_extension_cls"] = (
             "vllm.v1.worker.gpu.parallax_timing.ComponentTimingWorker"
         )
@@ -163,6 +167,7 @@ def main():
         gpu_memory_utilization=args.gpu_memory_utilization,
         enforce_eager=args.eager,
         seed=20260909,
+        hf_overrides={"gdn2_state_storage": args.state},
         disable_log_stats=False,
         **extra,
     )
@@ -174,6 +179,7 @@ def main():
     if args.inplace_sampler:
         llm.collective_rpc("parallax_set_inplace_sampler", args=(True,))
     if args.component_timing:
+        llm.collective_rpc("parallax_install_model_timing")
         llm.collective_rpc("parallax_install_sampler_timing")
     engine_context = llm.llm_engine.vllm_config.model_config.max_model_len
     peaks = {}
@@ -198,6 +204,12 @@ def main():
 
     manager.record = record
     result = {
+        "measurement_label": "MEASURED",
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "tensor_parallel_size": 1,
+        "independent_replicas": args.replica_count,
+        "replica_id": args.replica_id,
+        "state_storage": args.state,
         "model": args.model,
         "weights": (args.load_format + " seeded initialization")
         if args.load_format in ("dummy", "parallax_random")
@@ -238,6 +250,7 @@ def main():
         "model_executor/layers/attention/ops/parallax/**/*.py",
         "model_executor/layers/attention/block*residual*.py",
         "model_executor/layers/mamba/gdn/parallax*.py",
+        "model_executor/layers/mamba/eda/**/*.py",
         "model_executor/layers/parallax_linear.py",
         "model_executor/model_loader/parallax*.py",
         "transformers_utils/configs/parallax*",
@@ -246,6 +259,9 @@ def main():
     ):
         implementation_files.update(source.glob(pattern))
     result["vllm"] = vllm.__version__
+    result["effective_model_config"] = (
+        llm.llm_engine.vllm_config.model_config.hf_config.to_dict()
+    )
     result["implementation_sha256"] = {
         str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted(implementation_files)
@@ -311,6 +327,17 @@ def main():
         logprob_hashes = []
         component_timings = []
         for trial_index in range(args.repeats):
+            if args.barrier_dir:
+                barrier = (
+                    args.barrier_dir / f"p{length}-b{batch}-o{generated}-t{trial_index}"
+                )
+                barrier.mkdir(parents=True, exist_ok=True)
+                (barrier / str(args.replica_id)).touch()
+                deadline = time.monotonic() + 180
+                while len(list(barrier.iterdir())) < args.replica_count:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError(f"Replica barrier timed out: {barrier}")
+                    time.sleep(0.05)
             peaks.clear()
             if args.cpu_profile and trial_index == 0:
                 llm.collective_rpc("parallax_start_cpu_profile")
@@ -323,7 +350,10 @@ def main():
                 )
             if args.component_timing:
                 component_timings.append(
-                    llm.collective_rpc("parallax_component_timing", args=(batch,))
+                    llm.collective_rpc(
+                        "parallax_component_timing",
+                        args=(batch * length if generated == 1 else batch,),
+                    )
                 )
             token_hashes.append(
                 hashlib.sha256(
@@ -357,6 +387,8 @@ def main():
             metrics.append(
                 {
                     **peaks,
+                    "first_token_ts": min(s.first_token_ts for s in stats),
+                    "last_token_ts": max(s.last_token_ts for s in stats),
                     "ttft_median_seconds": statistics.median(
                         s.first_token_latency for s in stats
                     ),

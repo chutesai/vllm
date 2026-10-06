@@ -176,10 +176,15 @@ def main():
         random_weights=False,
         expert_backend="bf16",
         dense_precision="bf16",
-        checkpoint_format="kappa_bf16",
+        checkpoint_format="lambda_bf16"
+        if config.get("recurrent_backend") == "eda"
+        else "kappa_bf16",
         max_position_embeddings=config["max_seq_len"],
         logit_scale_max=coverage["inference_policy"].get("logit_scale_max"),
-        inference_attention_mode=coverage["inference_policy"]["attention_mode"],
+        export_attention_mode=coverage["inference_policy"]["attention_mode"],
+        inference_attention_mode="dense"
+        if config.get("recurrent_backend") == "eda"
+        else coverage["inference_policy"]["attention_mode"],
     )
     (out / "config.json").write_text(json.dumps(config, indent=2))
     (out / "model.safetensors.index.json").write_text(

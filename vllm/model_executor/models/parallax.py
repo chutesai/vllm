@@ -43,6 +43,7 @@ from ..layers.fused_moe.parallax.fused_pointwise import norm_gate
 from ..layers.fused_moe.parallax.ternary_decode import pack
 from ..layers.layernorm import RMSNorm
 from ..layers.logits_processor import LogitsProcessor
+from ..layers.mamba.eda.parallax_eda import EDALayer
 from ..layers.mamba.gdn.base import GatedDeltaNetAttention
 from ..layers.mamba.gdn.parallax import decode_gated, recurrent
 from ..layers.mamba.gdn.parallax_conv import causal_conv
@@ -173,6 +174,20 @@ class ExpertLayer(nn.Module):
             self._shared_output_ready = torch.cuda.Event()
         self.expert_block_n = getattr(c, "expert_block_n", 64)
         self.backend = c.expert_backend
+        self.mesh_bf16_reduce = (
+            c.recurrent_backend == "eda"
+            and self.backend == "bf16"
+            and getattr(c, "lambda_mesh_bf16_reduce", False)
+        )
+        self.lambda_router = c.recurrent_backend == "eda" and getattr(
+            c, "lambda_mesh_router", False
+        )
+        self.lambda_force_fp4 = c.recurrent_backend == "eda" and getattr(
+            c, "lambda_force_fp4", False
+        )
+        self.lambda_torch_experts = c.recurrent_backend == "eda" and getattr(
+            c, "lambda_torch_experts", False
+        )
         self.load_backend = "bf16" if self.backend == "packed_bf16" else self.backend
         self.fused_routing = getattr(c, "fused_routing", False)
         self.fast_router_sort = getattr(c, "fast_router_sort", False)
@@ -314,8 +329,29 @@ class ExpertLayer(nn.Module):
             gates = (
                 gates / gates.sum(dim=-1, keepdim=True).clamp_min(1e-06) * self.scaling
             ).contiguous()
+        if self.lambda_router:
+            selected = logits.to(x.dtype).sigmoid().gather(1, ids.long())
+            gates = (
+                (
+                    selected.float()
+                    / selected.float().sum(-1, keepdim=True).clamp_min(1e-6)
+                    * self.scaling
+                )
+                .float()
+                .contiguous()
+            )
         latent = self.latent_down(x)
-        if self.backend == "bf16":
+        if self.backend == "bf16" and self.lambda_torch_experts:
+            y = torch.zeros_like(latent)
+            for expert in range(self.up.shape[0]):
+                tokens, routes = (ids == expert).nonzero(as_tuple=True)
+                if tokens.numel():
+                    value = F.linear(
+                        F.linear(latent[tokens], self.up[expert]).relu().square(),
+                        self.down[expert],
+                    )
+                    y[tokens] += value * gates[tokens, routes, None]
+        elif self.backend == "bf16":
             from ..layers.fused_moe.parallax.packed_bf16 import (
                 moe as dense_moe,
             )
@@ -330,6 +366,7 @@ class ExpertLayer(nn.Module):
                 gates,
                 block_m=32 if x.shape[0] >= 256 else 16,
                 packed=False,
+                mesh_bf16_reduce=self.mesh_bf16_reduce,
             )
         elif self.backend == "packed_bf16":
             from ..layers.fused_moe.parallax.packed_bf16 import (
@@ -337,7 +374,8 @@ class ExpertLayer(nn.Module):
             )
 
             if self.single_sparse_fp4_components and (
-                256 <= x.shape[0] <= 512
+                self.lambda_force_fp4
+                or 256 <= x.shape[0] <= 512
                 or (self.single_sparse_fp4_prefill and x.shape[0] >= 256)
             ):
                 fp4_options = {}
@@ -728,6 +766,11 @@ class AttentionLayer(nn.Module):
         self.packed_kv = None
         self.packed_index = None
         self.sparse = sparse
+        self.lambda_dense = c.recurrent_backend == "eda" and getattr(
+            c, "lambda_fp32_attention", False
+        )
+        self.window = None if sparse else c.sliding_window_size
+        self.max_context = vc.model_config.max_model_len
         self.tensorcore_index_scores = False
         self.msa_score_tile = 16
         self.msa_score_blocks = 1
@@ -761,12 +804,20 @@ class AttentionLayer(nn.Module):
             rope_parameters={"rope_type": "default", "rope_theta": c.rope_theta},
             is_neox_style=False,
         )
+        if c.recurrent_backend == "eda" and getattr(c, "lambda_mesh_rope", False):
+            from ..layers.mamba.eda.parallax_eda_pointwise import LambdaRoPE
+
+            self.rope = LambdaRoPE(self.rope, self.d)
         backend = "triton"
         if backend not in ("triton", "flash_attn"):
             raise ValueError("dense_attention_backend must be triton or flash_attn")
         if vc.model_config.max_model_len < 0:
             backend = "triton"
-        dense = not sparse or vc.model_config.max_model_len <= c.msa_sparse_topk * 128
+        dense = (
+            not sparse
+            or getattr(c, "inference_attention_mode", None) == "dense"
+            or vc.model_config.max_model_len <= c.msa_sparse_topk * 128
+        )
         self.attn = Attention(
             self.hq,
             384 if self.projected_key_cache else self.d,
@@ -781,6 +832,7 @@ class AttentionLayer(nn.Module):
         )
         if sparse:
             self.max_context = vc.model_config.max_model_len
+            self.force_dense = getattr(c, "inference_attention_mode", None) == "dense"
             self.kv_down_proj = linear(c.d_model, c.msa_kv_latent_dim)
             self.kv_latent_norm = RMSNorm(c.msa_kv_latent_dim, eps=1e-06)
             self.k_proj = linear(c.msa_kv_latent_dim, self.hk * self.d)
@@ -924,17 +976,49 @@ class AttentionLayer(nn.Module):
         else:
             k, v = self.packed_kv(src).split(self.hk * self.d, dim=-1)
         q, k = self.rope(positions, self.q_proj(x), k)
+        if self.lambda_dense:
+            from ..layers.attention.ops.parallax.lambda_dense_attention import (
+                dense_attention,
+            )
+
+            metadata = cast(
+                dict[str, FlashAttentionMetadata | TritonAttentionMetadata] | None,
+                get_forward_context().attn_metadata,
+            )
+            if metadata is None:
+                return torch.zeros_like(x)
+            name = self.attn.layer_name
+            m = metadata[name]
+            n = m.num_actual_tokens
+            unified_kv_cache_update(
+                k.view(-1, self.hk, self.d), v.view(-1, self.hk, self.d), name
+            )
+            kc, vc = self.attn.kv_cache.transpose(1, 2).split(self.d, dim=-1)
+            y = dense_attention(
+                q[:n].view(n, self.hq, self.d).contiguous(),
+                kc,
+                vc,
+                m,
+                self.window,
+                self.max_context,
+            )
+            return self.o_proj(F.pad(y.flatten(1), (0, 0, 0, x.shape[0] - n)))
         if not self.sparse:
             return self.o_proj(self.attn(q, k, v))
-        if self.max_context <= self.topk * 128:
+        if self.force_dense or self.max_context <= self.topk * 128:
             return self.o_proj(self.attn(q, k, v))
         if self.full_selection_fastpath:
             metadata = cast(
                 dict[str, FlashAttentionMetadata | TritonAttentionMetadata] | None,
                 get_forward_context().attn_metadata,
             )
-            m = None if metadata is None else metadata[self.attn.layer_name]
-            if m is not None and m.max_seq_len <= self.topk * 128:
+            fastpath_metadata = (
+                None if metadata is None else metadata[self.attn.layer_name]
+            )
+            if (
+                fastpath_metadata is not None
+                and fastpath_metadata.max_seq_len <= self.topk * 128
+            ):
                 if self.packed_index is None:
                     ki = self.index_k(x)
                 else:
@@ -1036,11 +1120,9 @@ class ParallaxForCausalLM(nn.Module):
             raise NotImplementedError("GDN2 prefix-cache reuse not qualified")
         if vllm_config.speculative_config is not None:
             raise NotImplementedError("Speculative GDN2 rollback not qualified")
-        if (
-            not c.random_weights
-            and getattr(c, "checkpoint_format", None) != "kappa_bf16"
-        ):
-            raise NotImplementedError("A verified kappa_bf16 checkpoint is required")
+        expected = "lambda_bf16" if c.recurrent_backend == "eda" else "kappa_bf16"
+        if not c.random_weights and getattr(c, "checkpoint_format", None) != expected:
+            raise NotImplementedError(f"A verified {expected} checkpoint is required")
         if not c.random_weights and getattr(c, "dense_precision", "bf16") != "bf16":
             raise NotImplementedError("Qualify the BF16 checkpoint before quantizing")
         self.input_scale = (
@@ -1059,7 +1141,8 @@ class ParallaxForCausalLM(nn.Module):
             if kind == "E":
                 layer = ExpertLayer(c, i, sparse_scratch)
             elif kind == "R":
-                layer = GDN2Layer(c, vllm_config, name)
+                mixer = EDALayer if c.recurrent_backend == "eda" else GDN2Layer
+                layer = mixer(c, vllm_config, name)
             elif kind in "W*":
                 layer = AttentionLayer(c, vllm_config, name, kind == "*")
             else:
@@ -1071,6 +1154,24 @@ class ParallaxForCausalLM(nn.Module):
         self.block_attn_res_head = BAR(c.d_model, False, canonical=not c.random_weights)
         self.block_size = len(self.layers) // c.block_attn_res_n_blocks
         self.final_norm = RMSNorm(c.d_model, eps=1e-06)
+        if c.recurrent_backend == "eda":
+            from ..layers.mamba.eda.parallax_eda_pointwise import LambdaRMSNorm
+
+            for parent in list(self.modules()):
+                for name, module in list(parent.named_children()):
+                    if isinstance(module, RMSNorm):
+                        if not getattr(c, "lambda_mesh_norm", False):
+                            module.float()
+                            continue
+                        setattr(
+                            parent,
+                            name,
+                            LambdaRMSNorm(
+                                module.weight.data,
+                                unit_gain=parent is self and name == "final_norm",
+                                fp32_gain=isinstance(parent, EDALayer),
+                            ),
+                        )
         self.lm_head = ParallelLMHead(c.vocab_size, c.d_model)
         nn.init.normal_(self.lm_head.weight, std=0.02)
         if c.tie_word_embeddings:
